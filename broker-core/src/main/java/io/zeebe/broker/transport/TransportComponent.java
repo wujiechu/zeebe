@@ -239,13 +239,11 @@ public class TransportComponent implements Component
             boolean enableManagedRequests,
             Collection<SocketAddress> defaultEndpoints)
     {
-        final ServiceName<Dispatcher> receiveBufferName = createReceiveBuffer(serviceContainer, name, receiveBufferSize);
         final ServiceName<Dispatcher> sendBufferName = createSendBuffer(serviceContainer, name, receiveBufferSize);
 
         final ClientTransportService service = new ClientTransportService(requestPoolSize, enableManagedRequests, defaultEndpoints);
 
         return serviceContainer.createService(TransportServiceNames.clientTransport(name), service)
-            .dependency(receiveBufferName, service.getReceiveBufferInjector())
             .dependency(sendBufferName, service.getSendBufferInjector())
             .install();
     }
