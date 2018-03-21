@@ -17,7 +17,10 @@
  */
 package io.zeebe.broker.task;
 
+import io.zeebe.logstreams.log.LogStream;
+import io.zeebe.servicecontainer.ServiceName;
+
 public interface TaskQueueManager
 {
-    void startTaskQueue(String logName);
+    void startTaskQueue(ServiceName<LogStream> streamName, LogStream logStream);
 }

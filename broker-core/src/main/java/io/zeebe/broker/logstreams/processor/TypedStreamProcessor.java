@@ -19,6 +19,7 @@ package io.zeebe.broker.logstreams.processor;
 
 import io.zeebe.broker.system.log.PartitionEvent;
 import io.zeebe.broker.system.log.TopicEvent;
+import io.zeebe.broker.task.data.TaskEvent;
 import io.zeebe.broker.workflow.data.DeploymentEvent;
 import io.zeebe.broker.workflow.data.WorkflowEvent;
 import io.zeebe.logstreams.log.LogStream;
@@ -160,6 +161,10 @@ public class TypedStreamProcessor implements StreamProcessor
         else if (value instanceof WorkflowEvent)
         {
             return ((WorkflowEvent) value).getState();
+        }
+        else if (value instanceof TaskEvent)
+        {
+            return ((TaskEvent) value).getState();
         }
         else
         {
