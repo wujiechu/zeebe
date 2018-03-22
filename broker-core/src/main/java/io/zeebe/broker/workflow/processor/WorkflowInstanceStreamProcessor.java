@@ -27,6 +27,7 @@ import java.util.*;
 import io.zeebe.broker.incident.IncidentEventWriter;
 import io.zeebe.broker.incident.data.ErrorType;
 import io.zeebe.broker.logstreams.processor.MetadataFilter;
+import io.zeebe.broker.logstreams.processor.reactive.EventRef;
 import io.zeebe.broker.system.deployment.handler.CreateWorkflowResponseSender;
 import io.zeebe.broker.task.data.TaskEvent;
 import io.zeebe.broker.task.data.TaskHeaders;
@@ -145,6 +146,18 @@ public class WorkflowInstanceStreamProcessor implements StreamProcessor
             workflowDeploymentCache.getIdVersionSnapshot(),
             workflowDeploymentCache.getKeyPositionSnapshot(),
             payloadCache.getSnapshotSupport());
+
+    }
+
+
+    public void hintEvent(int type, EventRef eventRef)
+    {
+        if (type == EventType.TASK_EVENT)
+        {
+            eventRef.copyEvent(taskEvent);
+        }
+
+
 
     }
 
