@@ -35,6 +35,7 @@ import io.zeebe.logstreams.processor.StreamProcessorController;
 import io.zeebe.servicecontainer.*;
 import io.zeebe.transport.ServerTransport;
 import io.zeebe.util.EnsureUtil;
+import io.zeebe.util.metrics.MetricsManager;
 import io.zeebe.util.sched.Actor;
 
 public class WorkflowQueueManagerService extends Actor implements Service<WorkflowQueueManager>, WorkflowQueueManager
@@ -43,6 +44,7 @@ public class WorkflowQueueManagerService extends Actor implements Service<Workfl
 
     protected final Injector<ServerTransport> clientApiTransportInjector = new Injector<>();
     private final Injector<ServerTransport> managementServerInjector = new Injector<>();
+    private final Injector<MetricsManager> metricsManagerInjector = new Injector<>();
 
     protected final ServiceGroupReference<LogStream> logStreamsGroupReference = ServiceGroupReference.<LogStream>create()
             .onAdd((name, stream) -> addStream(stream, name))
@@ -67,6 +69,7 @@ public class WorkflowQueueManagerService extends Actor implements Service<Workfl
 
     private void installWorkflowStreamProcessor(final LogStream logStream)
     {
+        final MetricsManager metricsManager = metricsManagerInjector.getValue();
         final ServiceName<StreamProcessorController> streamProcessorServiceName = workflowInstanceStreamProcessorServiceName(logStream.getLogName());
         final String streamProcessorName = streamProcessorServiceName.getName();
 
@@ -77,7 +80,7 @@ public class WorkflowQueueManagerService extends Actor implements Service<Workfl
         final ServerTransport managementServer = managementServerInjector.getValue();
         final CreateWorkflowResponseSender createWorkflowResponseSender = new CreateWorkflowResponseSender(managementServer);
 
-        final WorkflowInstanceStreamProcessor workflowInstanceStreamProcessor = new WorkflowInstanceStreamProcessor(
+        final WorkflowInstanceStreamProcessor workflowInstanceStreamProcessor = new WorkflowInstanceStreamProcessor(metricsManager,
                 responseWriter,
                 createWorkflowResponseSender,
                 workflowCfg.deploymentCacheSize,
@@ -149,6 +152,11 @@ public class WorkflowQueueManagerService extends Actor implements Service<Workfl
     public Injector<ServerTransport> getManagementServerInjector()
     {
         return managementServerInjector;
+    }
+
+    public Injector<MetricsManager> getMetricsManagerInjector()
+    {
+        return metricsManagerInjector;
     }
 
     public void addStream(LogStream logStream, ServiceName<LogStream> logStreamServiceName)
