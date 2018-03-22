@@ -44,7 +44,7 @@ public class SystemComponent implements Component
         serviceContainer.createService(COUNTERS_MANAGER_SERVICE, countersManagerService)
             .install();
 
-        final MetricsManagerService metricsManagerService = new MetricsManagerService();
+        final MetricsManagerService metricsManagerService = new MetricsManagerService(context.getMetricsManager());
         serviceContainer.createService(METRICS_MANAGER, metricsManagerService)
             .install();
 
