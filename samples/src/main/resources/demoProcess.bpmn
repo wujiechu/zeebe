@@ -31,7 +31,7 @@
     </bpmn:serviceTask>
     <bpmn:serviceTask id="taskC" name="taks C">
       <bpmn:extensionElements>
-        <zeebe:taskDefinition type="foo" />
+        <zeebe:taskDefinition type="foobar" />
       </bpmn:extensionElements>
       <bpmn:incoming>SequenceFlow_1oh45y7</bpmn:incoming>
       <bpmn:outgoing>SequenceFlow_148rk2p</bpmn:outgoing>
