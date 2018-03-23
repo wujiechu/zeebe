@@ -4,6 +4,7 @@ import io.zeebe.msgpack.UnpackedObject;
 import io.zeebe.protocol.clientapi.EventType;
 import io.zeebe.util.collection.Reusable;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 public final class EventRef implements Reusable
@@ -11,18 +12,19 @@ public final class EventRef implements Reusable
     private final Consumer<EventRef> resetCallback;
 
     private EventType type;
-    private int refCount;
+    private AtomicInteger refCount;
     private long position;
     private UnpackedObject event;
 
     public EventRef(Consumer<EventRef> resetCallback)
     {
         this.resetCallback = resetCallback;
+        this.refCount = new AtomicInteger(-1);
     }
 
     public void setRefCount(int refCount)
     {
-        this.refCount = refCount;
+        this.refCount.set(refCount);
     }
 
     public void setEvent(UnpackedObject event)
@@ -54,9 +56,7 @@ public final class EventRef implements Reusable
     {
         event.copy(unpackedObject);
 
-        refCount--;
-
-        if (refCount == 0)
+        if (refCount.decrementAndGet() == 0)
         {
             resetCallback.accept(this);
         }
@@ -76,7 +76,7 @@ public final class EventRef implements Reusable
     @Override
     public void reset()
     {
-        refCount = -1;
+        refCount.set(-1);
         position = -1;
         type = null;
         event = null;
