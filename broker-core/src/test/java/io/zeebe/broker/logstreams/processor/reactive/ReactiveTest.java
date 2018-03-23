@@ -31,6 +31,11 @@ public class ReactiveTest
 
     private static final Logger LOG = io.zeebe.logstreams.impl.Loggers.LOGSTREAMS_LOGGER;
 
+    /**
+     * Is multiplied by 100 ms
+     */
+    public static final int MAX_WAIT_TIME = 1_200;
+
     @Rule
     public ActorSchedulerRule schedulerRule = new ActorSchedulerRule();
 
@@ -46,7 +51,7 @@ public class ReactiveTest
     private long firstWrittenTaskEvent;
     private StreamProcessorController secondController;
     private LogStreamWriter logStreamWriter;
-    public static final int WORK_COUNT = 100_000;
+    public static final int WORK_COUNT = 10_000_000;
     private List<StreamProcessorController> controllerList = new ArrayList<>();
 
     @Before
@@ -89,6 +94,8 @@ public class ReactiveTest
 
         logStreamWriter = context.logStreamWriter;
         firstWrittenTaskEvent = writeTaskEvent(logStreamWriter);
+
+        TestUtil.waitUntil(() -> defaultLogStream.getCurrentAppenderPosition() > firstWrittenTaskEvent);
     }
 
     private StreamProcessorController createStreamProcessController(String name)
@@ -233,7 +240,7 @@ public class ReactiveTest
         defaultLogStream.setCommitPosition(lastEventPos);
 
         // then
-        TestUtil.waitUntil(() -> taskEventProcessed.get() >= WORK_COUNT * 2, Integer.MAX_VALUE);
+        TestUtil.waitUntil(() -> taskEventProcessed.get() >= WORK_COUNT * 2, MAX_WAIT_TIME);
         final long end = System.currentTimeMillis();
         LOG.info("Processing takes {} ms", end - start);
         assertThat(workflowEventProcessed.get()).isEqualTo(0);
@@ -251,13 +258,14 @@ public class ReactiveTest
 
         final long lastEventPos = writeTaskEvents(logStreamWriter, WORK_COUNT);
         TestUtil.waitUntil(() -> defaultLogStream.getCurrentAppenderPosition() > lastEventPos);
+        LOG.info("Wrote {} events to the stream, last position is {}.", WORK_COUNT, lastEventPos);
 
         // when
         final long start = System.currentTimeMillis();
         defaultLogStream.setCommitPosition(lastEventPos);
 
         // then
-        TestUtil.waitUntil(() -> taskEventProcessed.get() >= WORK_COUNT * controllerList.size(), Integer.MAX_VALUE);
+        TestUtil.waitUntil(() -> taskEventProcessed.get() >= WORK_COUNT * controllerList.size(), MAX_WAIT_TIME);
         final long end = System.currentTimeMillis();
         LOG.info("Processing takes {} ms", end - start);
         assertThat(workflowEventProcessed.get()).isEqualTo(0);
@@ -327,7 +335,7 @@ public class ReactiveTest
                 .setActivityInstanceKey(i + 3);
 
             long position = 0;
-            while (position == 0)
+            while (position <= 0)
             {
                 position = writer.metadataWriter(brokerEventMetadata)
                     .valueWriter(taskEvent)
@@ -345,7 +353,7 @@ public class ReactiveTest
                 }
             }
 
-
+            assert lastPosition < position;
             lastPosition = position;
         }
         return lastPosition;

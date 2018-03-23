@@ -34,20 +34,20 @@ import io.zeebe.util.collection.ReusableObjectList;
 import io.zeebe.util.sched.Actor;
 import io.zeebe.util.sched.ActorCondition;
 import io.zeebe.util.sched.ActorScheduler;
+import io.zeebe.util.sched.SchedulingHints;
 import io.zeebe.util.sched.future.ActorFuture;
 import io.zeebe.util.sched.future.CompletableActorFuture;
+import org.agrona.concurrent.OneToOneConcurrentArrayQueue;
 import org.slf4j.Logger;
 
-import java.util.ArrayList;
-import java.util.EnumMap;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ReactiveStreamProcessorController extends Actor
 {
     private static final Logger LOG = Loggers.LOGSTREAMS_LOGGER;
 
-    private static final int EVENT_WINDIW_SIZE = 128;
+    private static final int EVENT_WINDIW_SIZE = 8;
     private static final EnumMap<EventType, Class<? extends UnpackedObject>> EVENT_REGISTRY = new EnumMap<>(EventType.class);
     static
     {
@@ -69,8 +69,8 @@ public class ReactiveStreamProcessorController extends Actor
     private final BrokerEventMetadata brokerEventMetadata;
 
 
-    private final EnumMap<EventType, ReusableObjectList<UnpackedObject>> eventPools;
-    private final ReusableObjectList<EventRef> eventWindow;
+    private final EnumMap<EventType, OneToOneConcurrentArrayQueue<UnpackedObject>> eventPools;
+    private final OneToOneConcurrentArrayQueue<EventRef> eventWindow;
     private final EnumMap<EventType, List<StreamProcessorController>> typedControllers;
 
     private ActorCondition actorCondition;
@@ -85,19 +85,15 @@ public class ReactiveStreamProcessorController extends Actor
         brokerEventMetadata = new BrokerEventMetadata();
 
         this.eventPools = new EnumMap<>(EventType.class);
-        initPools();
-        eventWindow = new ReusableObjectList<>(() -> new EventRef(this::releaseEvent));
-        typedControllers = new EnumMap<EventType, List<StreamProcessorController>>(EventType.class);
+
+        this.eventWindow = new OneToOneConcurrentArrayQueue<>(EVENT_WINDIW_SIZE);
+        for (int i = 0; i < EVENT_WINDIW_SIZE; i++)
+        {
+            this.eventWindow.offer(new EventRef(this::releaseEvent));
+        }
+        this.typedControllers = new EnumMap<EventType, List<StreamProcessorController>>(EventType.class);
     }
 
-    private void initPools()
-    {
-        EVENT_REGISTRY.forEach((t, c) ->
-            {
-                eventPools.put(t, new ReusableObjectList<>(() -> ReflectUtil.newInstance(c)));
-            }
-        );
-    }
 
     /**
      *  Called internally by event ref, if ref count is equal to zero.
@@ -112,9 +108,11 @@ public class ReactiveStreamProcessorController extends Actor
         {
             LOG.debug("Release event ref {} and trigger new processing.", eventRef);
 
-            eventPools.get(eventRef.getType()).remove(eventRef.getEvent());
-            eventWindow.remove(eventRef);
-            actor.submit(this::processEvent);
+            eventPools.get(eventRef.getType()).offer(eventRef.getEvent());
+            eventWindow.offer(eventRef);
+            eventRef.reset();
+
+            actor.run(this::processEvent);
         });
     }
 
@@ -136,18 +134,24 @@ public class ReactiveStreamProcessorController extends Actor
             {
                 streamProcessorControllers = new ArrayList<>();
                 typedControllers.put(eventType, streamProcessorControllers);
+
+                OneToOneConcurrentArrayQueue<UnpackedObject> eventPool = new OneToOneConcurrentArrayQueue<>(EVENT_WINDIW_SIZE);
+                for (int i = 0; i < EVENT_WINDIW_SIZE; i++)
+                {
+                    eventPool.offer(ReflectUtil.newInstance(EVENT_REGISTRY.get(eventType)));
+                }
+                eventPools.put(eventType, eventPool);
             }
 
             streamProcessorControllers.add(controller);
         });
     }
 
-
     public ActorFuture<Void> openAsync()
     {
         if (isOpened.compareAndSet(false, true))
         {
-            return actorScheduler.submitActor(this);
+            return actorScheduler.submitActor(this, false, SchedulingHints.ioBound((short) 0));
         }
         else
         {
@@ -180,7 +184,7 @@ public class ReactiveStreamProcessorController extends Actor
          * [              WINDOW                ]
          * [ (Event|Count) | ....               ]
          */
-        if (eventWindow.size() < EVENT_WINDIW_SIZE)
+        if (!eventWindow.isEmpty())
         {
 
             if (logStreamReader.hasNext())
@@ -192,15 +196,15 @@ public class ReactiveStreamProcessorController extends Actor
 
                 LOG.debug("Process next event of type {} on position {}", eventType, next.getPosition());
 
-                final ReusableObjectList<? extends UnpackedObject> eventPool = eventPools.get(eventType);
-                if (eventPool.size() < EVENT_WINDIW_SIZE)
+                final OneToOneConcurrentArrayQueue<UnpackedObject> eventPool = eventPools.get(eventType);
+                if (!eventPool.isEmpty())
                 {
                     final List<StreamProcessorController> streamProcessorControllers = typedControllers.get(eventType);
 
-                    final UnpackedObject event = eventPool.add();
+                    final UnpackedObject event = eventPool.poll();
                     next.readValue(event);
 
-                    final EventRef eventRef = eventWindow.add();
+                    final EventRef eventRef = eventWindow.poll();
                     eventRef.setEvent(event);
                     eventRef.setType(eventType);
                     eventRef.setRefCount(streamProcessorControllers.size());
@@ -209,12 +213,12 @@ public class ReactiveStreamProcessorController extends Actor
                     LOG.debug("Distribute unpacked event to {} registered controller", streamProcessorControllers.size());
                     streamProcessorControllers.forEach((s) -> s.hintEvent(eventRef));
 
-                    actor.submit(this::processEvent);
+                    actor.run(this::processEvent);
                 }
                 else
                 {
                     // TODO we need to step back - so we read this event next time again
-                    LOG.debug("Event pool for event of type {} is exhausted, size is {}", eventType, eventPool.size());
+                    LOG.error("Event pool for event of type {} is exhausted, size is {}", eventType, eventPool.size());
                 }
             }
             else

@@ -40,6 +40,11 @@ public class OldStreamCtrlTest
 
     private static final Logger LOG = Loggers.LOGSTREAMS_LOGGER;
 
+    /**
+     * Is multiplied by 100 ms
+     */
+    public static final int MAX_WAIT_TIME = 1_200;
+
     @Rule
     public ActorSchedulerRule schedulerRule = new ActorSchedulerRule();
 
@@ -55,7 +60,7 @@ public class OldStreamCtrlTest
     private long firstWrittenTaskEvent;
     private StreamProcessorController secondController;
     private LogStreamWriter logStreamWriter;
-    public static final int WORK_COUNT = 100_000;
+    public static final int WORK_COUNT = 10_000_000;
 
     @Before
     public void setUp()
@@ -86,6 +91,8 @@ public class OldStreamCtrlTest
         defaultLogStream.openLogStreamController().join();
 
         firstWrittenTaskEvent = writeTaskEvent(logStreamWriter);
+
+        TestUtil.waitUntil(() -> defaultLogStream.getCurrentAppenderPosition() > firstWrittenTaskEvent);
     }
 
     private StreamProcessorController createStreamProcessController(SnapshotStorage storage, String name)
@@ -139,7 +146,7 @@ public class OldStreamCtrlTest
         defaultLogStream.setCommitPosition(lastEventPos);
 
         // then
-        TestUtil.waitUntil(() -> taskEventProcessed.get() >= WORK_COUNT * 2, Integer.MAX_VALUE);
+        TestUtil.waitUntil(() -> taskEventProcessed.get() >= WORK_COUNT * 2, MAX_WAIT_TIME);
         final long end = System.currentTimeMillis();
         LOG.info("Processing takes {} ms", end - start);
         assertThat(workflowEventProcessed.get()).isEqualTo(0);
@@ -164,7 +171,7 @@ public class OldStreamCtrlTest
         defaultLogStream.setCommitPosition(lastEventPos);
 
         // then
-        TestUtil.waitUntil(() -> taskEventProcessed.get() >= WORK_COUNT * controllerList.size(), Integer.MAX_VALUE);
+        TestUtil.waitUntil(() -> taskEventProcessed.get() >= WORK_COUNT * controllerList.size(), MAX_WAIT_TIME);
         final long end = System.currentTimeMillis();
         LOG.info("Processing takes {} ms", end - start);
         assertThat(workflowEventProcessed.get()).isEqualTo(0);
@@ -234,7 +241,7 @@ public class OldStreamCtrlTest
                 .setActivityInstanceKey(i + 3);
 
             long position = 0;
-            while (position == 0)
+            while (position <= 0)
             {
                 position = writer.metadataWriter(brokerEventMetadata)
                     .valueWriter(taskEvent)
@@ -252,7 +259,7 @@ public class OldStreamCtrlTest
                 }
             }
 
-
+            assert position > lastPosition;
             lastPosition = position;
         }
         return lastPosition;
