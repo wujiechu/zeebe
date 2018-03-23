@@ -1,7 +1,6 @@
 package io.zeebe.broker.task.processor;
 
 import static io.zeebe.test.util.TestUtil.doRepeatedly;
-import static io.zeebe.test.util.TestUtil.waitUntil;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 
@@ -23,7 +22,6 @@ import io.zeebe.broker.topic.Events;
 import io.zeebe.broker.topic.StreamProcessorControl;
 import io.zeebe.broker.topic.TestStreams;
 import io.zeebe.broker.transport.clientapi.BufferingServerOutput;
-import io.zeebe.broker.workflow.data.DeploymentState;
 import io.zeebe.logstreams.log.LoggedEvent;
 import io.zeebe.logstreams.processor.StreamProcessor;
 import io.zeebe.msgpack.UnpackedObject;
@@ -118,14 +116,15 @@ public class TaskLockExpirationStreamProcessorTest
         // then
 
         // TODO: vll kann man hier auch eigene Subklassen haben, die nettere Filtermethoden haben, z.B. filterByState(..)
-        final List<LoggedEvent> expirationEvents = doRepeatedly(
+        final List<Long> expirationEvents = doRepeatedly(
             () -> streams.events(STREAM_NAME)
                 .filter(Events::isTaskEvent)
                 .filter(e -> Events.asTaskEvent(e).getState() == TaskState.EXPIRE_LOCK)
+                .map(e -> e.getKey())
                 .collect(Collectors.toList()))
             .until(l -> l.size() == 2);
 
-        assertThat(expirationEvents).extracting("key").containsExactlyInAnyOrder(1, 2);
+        assertThat(expirationEvents).containsExactlyInAnyOrder(1L, 2L);
     }
 
     @Test

@@ -88,10 +88,15 @@ public class TaskExpireLockStreamProcessor implements StreamProcessorLifecycleAw
 
             if (lockExpired(lockExpirationTime))
             {
-                // TODO: das hier kann eine große Menge an submitteten ActorJobs geben, wenn viele Timer gleichzeitig expired sind;
-                // sollte lieber mit backpressure arbeiten
-                // und ohne actor.runUntilDone
-                streamWriter.writeTaskEvent(eventPosition, TaskState.EXPIRE_LOCK);
+                // TODO: would be nicer to have a consumable channel for timed-out timers
+                //   that we can stop consuming/yield on backpressure
+
+                System.out.println("Expiring task with key " + entry.getKey() + " at position " + eventPosition);
+                final boolean success = streamWriter.tryWriteTaskEvent(eventPosition, TaskState.EXPIRE_LOCK);
+                if (!success)
+                {
+                    return;
+                }
             }
         }
     }
