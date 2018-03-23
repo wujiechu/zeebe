@@ -260,6 +260,18 @@ public class TestStreams
         }
 
         @Override
+        public void blockAfterTopicEvent(Predicate<TypedEvent<TopicEvent>> test)
+        {
+            blockAfterEvent(e -> Events.isTopicEvent(e) && test.test(CopiedTypedEvent.toTypedEvent(e, TopicEvent.class)));
+        }
+
+        @Override
+        public void blockAfterPartitionEvent(Predicate<TypedEvent<PartitionEvent>> test)
+        {
+            blockAfterEvent(e -> Events.isPartitionEvent(e) && test.test(CopiedTypedEvent.toTypedEvent(e, PartitionEvent.class)));
+        }
+
+        @Override
         public void close()
         {
             if (currentController != null && currentController.isOpened())
@@ -312,6 +324,7 @@ public class TestStreams
                 .actorScheduler(actorScheduler)
                 .build();
         }
+
     }
 
     public static class SuspendableStreamProcessor implements StreamProcessor

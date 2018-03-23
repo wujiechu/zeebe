@@ -12,6 +12,7 @@ import org.junit.runners.model.Statement;
 import io.zeebe.broker.logstreams.processor.TypedStreamEnvironment;
 import io.zeebe.broker.topic.StreamProcessorControl;
 import io.zeebe.broker.topic.TestStreams;
+import io.zeebe.broker.topic.TestStreams.FluentLogWriter;
 import io.zeebe.broker.transport.clientapi.BufferingServerOutput;
 import io.zeebe.logstreams.processor.StreamProcessor;
 import io.zeebe.msgpack.UnpackedObject;
@@ -80,11 +81,26 @@ public class StreamProcessorRule implements TestRule
             .write();
     }
 
+    public FluentLogWriter newEvent()
+    {
+        return streams.newEvent(STREAM_NAME);
+    }
+
     public long writeEvent(UnpackedObject value)
     {
         return streams.newEvent(STREAM_NAME)
             .event(value)
             .write();
+    }
+
+    public void truncateLog(long position)
+    {
+        streams.truncate(STREAM_NAME, position);
+    }
+
+    public BufferingServerOutput getOutput()
+    {
+        return output;
     }
 
     private class SetupRule extends ExternalResource
