@@ -80,6 +80,13 @@ public class StreamProcessorRule implements TestRule
             .write();
     }
 
+    public long writeEvent(UnpackedObject value)
+    {
+        return streams.newEvent(STREAM_NAME)
+            .event(value)
+            .write();
+    }
+
     private class SetupRule extends ExternalResource
     {
 

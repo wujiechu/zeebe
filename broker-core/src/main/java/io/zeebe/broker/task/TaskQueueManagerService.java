@@ -31,7 +31,6 @@ import io.zeebe.broker.logstreams.processor.TypedStreamEnvironment;
 import io.zeebe.broker.logstreams.processor.TypedStreamProcessor;
 import io.zeebe.broker.task.processor.TaskExpireLockStreamProcessor;
 import io.zeebe.broker.task.processor.TaskInstanceStreamProcessor;
-import io.zeebe.broker.transport.clientapi.SubscribedEventWriter;
 import io.zeebe.logstreams.log.LogStream;
 import io.zeebe.logstreams.processor.StreamProcessorController;
 import io.zeebe.servicecontainer.Injector;
@@ -67,10 +66,9 @@ public class TaskQueueManagerService implements Service<TaskQueueManager>, TaskQ
 
         final ServerTransport serverTransport = clientApiTransportInjector.getValue();
 
-        final SubscribedEventWriter subscribedEventWriter = new SubscribedEventWriter(serverTransport.getOutput());
         final TaskSubscriptionManager taskSubscriptionManager = taskSubscriptionManagerInjector.getValue();
 
-        final TaskInstanceStreamProcessor taskInstanceStreamProcessor = new TaskInstanceStreamProcessor(subscribedEventWriter, taskSubscriptionManager);
+        final TaskInstanceStreamProcessor taskInstanceStreamProcessor = new TaskInstanceStreamProcessor(taskSubscriptionManager);
         final TypedStreamEnvironment env = new TypedStreamEnvironment(stream, serverTransport.getOutput());
 
         final TypedStreamProcessor streamProcessor = taskInstanceStreamProcessor.createStreamProcessor(env);

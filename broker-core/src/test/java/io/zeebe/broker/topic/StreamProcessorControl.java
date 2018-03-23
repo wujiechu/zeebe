@@ -21,6 +21,7 @@ import java.util.function.Predicate;
 
 import io.zeebe.broker.logstreams.processor.TypedEvent;
 import io.zeebe.broker.task.data.TaskEvent;
+import io.zeebe.broker.workflow.data.DeploymentEvent;
 import io.zeebe.logstreams.log.LoggedEvent;
 
 public interface StreamProcessorControl
@@ -31,6 +32,8 @@ public interface StreamProcessorControl
     void blockAfterEvent(Predicate<LoggedEvent> test);
 
     void blockAfterTaskEvent(Predicate<TypedEvent<TaskEvent>> test);
+
+    void blockAfterDeploymentEvent(Predicate<TypedEvent<DeploymentEvent>> test);
 
     void purgeSnapshot();
 

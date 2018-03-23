@@ -80,7 +80,8 @@ public class TypedStreamProcessorTest
             .onEvent(EventType.TOPIC_EVENT, TopicState.CREATE, new BatchProcessor())
             .build();
 
-        final StreamProcessorControl streamProcessorControl = streams.runStreamProcessor(STREAM_NAME, STREAM_PROCESSOR_ID, streamProcessor);
+        final StreamProcessorControl streamProcessorControl = streams.initStreamProcessor(STREAM_NAME, STREAM_PROCESSOR_ID, () -> streamProcessor);
+        streamProcessorControl.start();
         final long firstEventPosition = streams.newEvent(STREAM_NAME).event(createTopic("foo", 1)).write();
 
         // when

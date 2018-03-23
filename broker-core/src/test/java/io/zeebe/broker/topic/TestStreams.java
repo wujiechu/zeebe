@@ -254,6 +254,12 @@ public class TestStreams
         }
 
         @Override
+        public void blockAfterDeploymentEvent(Predicate<TypedEvent<DeploymentEvent>> test)
+        {
+            blockAfterEvent(e -> Events.isDeploymentEvent(e) && test.test(CopiedTypedEvent.toTypedEvent(e, DeploymentEvent.class)));
+        }
+
+        @Override
         public void close()
         {
             if (currentController != null && currentController.isOpened())

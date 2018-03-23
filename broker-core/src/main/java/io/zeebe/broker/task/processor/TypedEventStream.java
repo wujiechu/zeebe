@@ -4,6 +4,7 @@ import java.util.stream.Stream;
 
 import io.zeebe.broker.task.data.TaskEvent;
 import io.zeebe.broker.topic.Events;
+import io.zeebe.broker.workflow.data.DeploymentEvent;
 import io.zeebe.logstreams.log.LoggedEvent;
 
 public class TypedEventStream extends StreamWrapper<LoggedEvent>
@@ -19,6 +20,14 @@ public class TypedEventStream extends StreamWrapper<LoggedEvent>
         return new TaskEventStream(
             filter(Events::isTaskEvent)
             .map(e -> CopiedTypedEvent.toTypedEvent(e, TaskEvent.class)));
+    }
+
+
+    public DeploymentEventStream onlyDeploymentEvents()
+    {
+        return new DeploymentEventStream(
+            filter(Events::isDeploymentEvent)
+            .map(e -> CopiedTypedEvent.toTypedEvent(e, DeploymentEvent.class)));
     }
 
 
