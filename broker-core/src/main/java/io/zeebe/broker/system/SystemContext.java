@@ -87,14 +87,17 @@ public class SystemContext implements AutoCloseable
         final Map<String, String> globalLabels = new HashMap<>();
         globalLabels.put("cluster", "zeebe");
         globalLabels.put("node", brokerId);
-        return new MetricsManager(globalLabels);
+        return new MetricsManager("zb_", globalLabels);
     }
 
     private void initBrokerInfoMetric()
     {
-        final Map<String, String> labels = new HashMap<>();
-        labels.put("version", Broker.VERSION);
-        metricsManager.allocate("zb_broker_info", labels).incrementOrdered();
+        // one-shot metric to submit metadata
+        metricsManager.newMetric("broker_info")
+                .type("counter")
+                .label("version", Broker.VERSION)
+                .create()
+                .incrementOrdered();
     }
 
     private ActorScheduler initScheduler(ActorClock clock, String brokerId)
