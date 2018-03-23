@@ -37,7 +37,6 @@ public class WorkflowComponent implements Component
         serviceContainer.createService(WORKFLOW_QUEUE_MANAGER, workflowQueueManagerService)
             .dependency(TransportServiceNames.serverTransport(TransportServiceNames.CLIENT_API_SERVER_NAME), workflowQueueManagerService.getClientApiTransportInjector())
             .dependency(TransportServiceNames.bufferingServerTransport(TransportServiceNames.MANAGEMENT_API_SERVER_NAME), workflowQueueManagerService.getManagementServerInjector())
-            .dependency(SystemServiceNames.METRICS_MANAGER, workflowQueueManagerService.getMetricsManagerInjector())
             .groupReference(WORKFLOW_STREAM_GROUP, workflowQueueManagerService.getLogStreamsGroupReference())
             .install();
     }

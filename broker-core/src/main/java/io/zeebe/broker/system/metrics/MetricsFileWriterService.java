@@ -28,7 +28,6 @@ import io.zeebe.util.sched.SchedulingHints;
 
 public class MetricsFileWriterService implements Service<MetricsFileWriter>
 {
-    private final Injector<MetricsManager> metricsManagerInjector = new Injector<>();
     private MetricsFileWriter metricsFileWriter;
     private MetricsCfg cfg;
 
@@ -41,11 +40,11 @@ public class MetricsFileWriterService implements Service<MetricsFileWriter>
     public void start(ServiceStartContext startContext)
     {
         final ActorScheduler scheduler = startContext.getScheduler();
-        final MetricsManager metricsManager = metricsManagerInjector.getValue();
+        final MetricsManager metricsManager = startContext.getScheduler().getMetricsManager();
 
         final String metricsFileName = new File(cfg.getDirectory(), "zeebe.prom").getAbsolutePath();
 
-        metricsFileWriter = new MetricsFileWriter(Duration.ofSeconds(5), metricsFileName, metricsManager);
+        metricsFileWriter = new MetricsFileWriter(Duration.ofSeconds(1), metricsFileName, metricsManager);
         startContext.async(scheduler.submitActor(metricsFileWriter, SchedulingHints.isIoBound(0)));
     }
 
@@ -59,11 +58,6 @@ public class MetricsFileWriterService implements Service<MetricsFileWriter>
     public MetricsFileWriter get()
     {
         return metricsFileWriter;
-    }
-
-    public Injector<MetricsManager> getMetricsManagerInjector()
-    {
-        return metricsManagerInjector;
     }
 
 }

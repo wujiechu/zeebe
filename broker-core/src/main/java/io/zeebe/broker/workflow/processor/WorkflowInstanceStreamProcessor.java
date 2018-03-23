@@ -48,8 +48,6 @@ import io.zeebe.msgpack.mapping.*;
 import io.zeebe.protocol.Protocol;
 import io.zeebe.protocol.clientapi.EventType;
 import io.zeebe.protocol.impl.BrokerEventMetadata;
-import io.zeebe.util.metrics.Metric;
-import io.zeebe.util.metrics.MetricsManager;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.LongArrayList;
@@ -98,7 +96,6 @@ public class WorkflowInstanceStreamProcessor implements StreamProcessor
     // internal //////////////////////////////////////
 
     protected final CommandResponseWriter responseWriter;
-    protected final MetricsManager metricsManager;
 
     protected final WorkflowInstanceIndex workflowInstanceIndex;
     protected final ActivityInstanceMap activityInstanceMap;
@@ -123,16 +120,12 @@ public class WorkflowInstanceStreamProcessor implements StreamProcessor
 
     protected LogStream logStream;
 
-    private Metric workflowInstanceEventsMetric;
-
     public WorkflowInstanceStreamProcessor(
-            MetricsManager metricsManager,
             CommandResponseWriter responseWriter,
             CreateWorkflowResponseSender createWorkflowResponseSender,
             int deploymentCacheSize,
             int payloadCacheSize)
     {
-        this.metricsManager = metricsManager;
         this.responseWriter = responseWriter;
         this.logStreamReader = new BufferedLogStreamReader();
 
@@ -173,18 +166,11 @@ public class WorkflowInstanceStreamProcessor implements StreamProcessor
         this.incidentEventWriter = new IncidentEventWriter(sourceEventMetadata, workflowInstanceEvent);
 
         this.logStream = logstream;
-
-        final Map<String, String> labels = new HashMap<String, String>();
-        labels.put("type", "created");
-        labels.put("topic", logstream.getTopicName().toString());
-        labels.put("partition", String.valueOf(logstream.getPartitionId()));
-        workflowInstanceEventsMetric = metricsManager.allocate("zb_workflow_instance_events", labels);
     }
 
     @Override
     public void onClose()
     {
-        workflowInstanceEventsMetric.close();
         workflowInstanceIndex.close();
         activityInstanceMap.close();
         workflowDeploymentCache.close();
@@ -255,6 +241,9 @@ public class WorkflowInstanceStreamProcessor implements StreamProcessor
 
             case CANCEL_WORKFLOW_INSTANCE:
                 eventProcessor = cancelWorkflowInstanceProcessor;
+                break;
+
+            case WORKFLOW_INSTANCE_COMPLETED:
                 break;
 
             case SEQUENCE_FLOW_TAKEN:
@@ -604,8 +593,6 @@ public class WorkflowInstanceStreamProcessor implements StreamProcessor
             workflowInstanceEvent
                     .setState(newEventType)
                     .setWorkflowInstanceKey(eventKey);
-
-            workflowInstanceEventsMetric.incrementOrdered();
         }
 
         @Override

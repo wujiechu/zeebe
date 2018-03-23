@@ -113,10 +113,10 @@ public class SystemContext implements AutoCloseable
             numberOfThreads = MAX_THREAD_COUNT;
         }
 
-        Loggers.SYSTEM_LOGGER.debug("Start scheduler with {} threads.", numberOfThreads);
-
         final int ioBoundThreads = 2;
         final int cpuBoundThreads = Math.max(1, numberOfThreads - ioBoundThreads);
+
+        Loggers.SYSTEM_LOGGER.info("Scheduler configuration: Threads{cpu-bound: {}, io-bound: {}}.", cpuBoundThreads, ioBoundThreads);
 
         return ActorScheduler.newActorScheduler()
                              .setActorClock(clock)

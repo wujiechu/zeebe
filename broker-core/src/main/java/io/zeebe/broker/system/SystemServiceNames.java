@@ -25,11 +25,9 @@ import io.zeebe.broker.system.log.SystemPartitionManager;
 import io.zeebe.broker.system.metrics.MetricsFileWriter;
 import io.zeebe.logstreams.processor.StreamProcessorController;
 import io.zeebe.servicecontainer.ServiceName;
-import io.zeebe.util.metrics.MetricsManager;
 
 public class SystemServiceNames
 {
-    public static final ServiceName<MetricsManager> METRICS_MANAGER = ServiceName.newServiceName("broker.metricsManager", MetricsManager.class);
     public static final ServiceName<MetricsFileWriter> METRICS_FILE_WRITER = ServiceName.newServiceName("broker.metricsFileWriter", MetricsFileWriter.class);
 
     public static final ServiceName<Counters> COUNTERS_MANAGER_SERVICE = ServiceName.newServiceName("broker.countersManager", Counters.class);
