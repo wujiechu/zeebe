@@ -104,7 +104,6 @@ public class SystemContext implements AutoCloseable
 
         return ActorScheduler.newActorScheduler()
                              .setActorClock(clock)
-                             .setCountersManager(countersManager)
                              .setCpuBoundActorThreadCount(cpuBoundThreads)
                              .setIoBoundActorThreadCount(ioBoundThreads)
                              .setSchedulerName(brokerId)
