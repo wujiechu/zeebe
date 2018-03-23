@@ -54,7 +54,7 @@ public class TaskInstanceStreamProcessor
     protected final TaskInstanceMap taskIndex;
     protected int logStreamPartitionId;
 
-    public TaskInstanceStreamProcessor(SubscribedEventWriter subscribedEventWriter, TaskSubscriptionManager taskSubscriptionManager)
+    public TaskInstanceStreamProcessor(TaskSubscriptionManager taskSubscriptionManager)
     {
         this.taskSubscriptionManager = taskSubscriptionManager;
 

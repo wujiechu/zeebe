@@ -19,6 +19,8 @@ package io.zeebe.broker.topic;
 
 import java.util.function.Predicate;
 
+import io.zeebe.broker.logstreams.processor.TypedEvent;
+import io.zeebe.broker.task.data.TaskEvent;
 import io.zeebe.logstreams.log.LoggedEvent;
 
 public interface StreamProcessorControl
@@ -27,6 +29,8 @@ public interface StreamProcessorControl
     void unblock();
 
     void blockAfterEvent(Predicate<LoggedEvent> test);
+
+    void blockAfterTaskEvent(Predicate<TypedEvent<TaskEvent>> test);
 
     void purgeSnapshot();
 

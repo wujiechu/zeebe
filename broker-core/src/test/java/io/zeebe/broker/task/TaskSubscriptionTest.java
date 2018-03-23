@@ -20,6 +20,7 @@ package io.zeebe.broker.task;
 import static io.zeebe.test.broker.protocol.clientapi.TestTopicClient.taskEvents;
 import static io.zeebe.test.util.TestUtil.waitUntil;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.net.StandardSocketOptions;
@@ -304,6 +305,18 @@ public class TaskSubscriptionTest
 
         // then
         waitUntil(() -> apiRule.numSubscribedEventsAvailable() == 4);
+    }
+
+    @Test
+    public void shouldPublishFailedTaskAgain()
+    {
+        fail("implement");
+    }
+
+    @Test
+    public void shouldPublishExpiredTaskAgain()
+    {
+        fail("implement");
     }
 
 

@@ -30,9 +30,11 @@ import java.util.function.Supplier;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
+import io.zeebe.broker.logstreams.processor.TypedEvent;
 import io.zeebe.broker.system.log.PartitionEvent;
 import io.zeebe.broker.system.log.TopicEvent;
 import io.zeebe.broker.task.data.TaskEvent;
+import io.zeebe.broker.task.processor.CopiedTypedEvent;
 import io.zeebe.broker.workflow.data.DeploymentEvent;
 import io.zeebe.broker.workflow.data.WorkflowEvent;
 import io.zeebe.logstreams.LogStreams;
@@ -243,6 +245,12 @@ public class TestStreams
         public void blockAfterEvent(Predicate<LoggedEvent> test)
         {
             currentStreamProcessor.blockAfterEvent(test);
+        }
+
+        @Override
+        public void blockAfterTaskEvent(Predicate<TypedEvent<TaskEvent>> test)
+        {
+            blockAfterEvent(e -> Events.isTaskEvent(e) && test.test(CopiedTypedEvent.toTypedEvent(e, TaskEvent.class)));
         }
 
         @Override

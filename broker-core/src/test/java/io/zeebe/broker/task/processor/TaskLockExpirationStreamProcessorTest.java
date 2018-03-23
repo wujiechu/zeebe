@@ -2,7 +2,6 @@ package io.zeebe.broker.task.processor;
 
 import static io.zeebe.test.util.TestUtil.doRepeatedly;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.fail;
 
 import java.time.Duration;
 import java.util.List;
@@ -59,32 +58,5 @@ public class TaskLockExpirationStreamProcessorTest
             .until(l -> l.size() == 2);
 
         assertThat(expirationEvents).extracting("key").containsExactlyInAnyOrder(1L, 2L);
-    }
-
-    @Test
-    public void shouldExpireLockOnlyOnce()
-    {
-        // TODO: expire task twice, then make sure the second expire command is rejected
-        // TODO: das hier gehört eher in einen TaskStreamProcessorTest
-        // und die anderen auch
-        fail();
-    }
-
-    @Test
-    public void shouldRejectExpireCommandIfTaskCompleted()
-    {
-        fail();
-    }
-
-    @Test
-    public void shouldRejectExpireCommandIfTaskFailed()
-    {
-        fail();
-    }
-
-    @Test
-    public void shouldFailToExpireLockIfEventNotFound()
-    {
-        fail();
     }
 }
