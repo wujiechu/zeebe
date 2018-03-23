@@ -17,6 +17,7 @@
  */
 package io.zeebe.broker.task.processor;
 
+import io.zeebe.broker.Loggers;
 import io.zeebe.broker.logstreams.processor.MetadataFilter;
 import io.zeebe.broker.logstreams.processor.NoopSnapshotSupport;
 import io.zeebe.broker.task.CreditsRequest;
@@ -190,6 +191,7 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
         final int credits = request.getCredits();
 
         subscriptions.addCredits(subscriberKey, credits);
+        Loggers.SYSTEM_LOGGER.warn("FINDME increasing credits for subscription {} to {}", subscriberKey, credits);
 
         context.resumeController();
     }
