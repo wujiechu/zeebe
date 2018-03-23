@@ -15,8 +15,6 @@
  */
 package io.zeebe.broker.logstreams.processor.reactive;
 
-import io.zeebe.logstreams.spi.SnapshotSupport;
-
 /**
  * Process events from a log stream.
  */

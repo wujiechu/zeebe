@@ -155,6 +155,11 @@ public class ReactiveStreamProcessorController extends Actor
         }
     }
 
+    public ActorFuture<Void> closeAsync()
+    {
+        return actor.close();
+    }
+
     @Override
     protected void onActorStarted()
     {

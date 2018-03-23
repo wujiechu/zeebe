@@ -1,12 +1,21 @@
-package io.zeebe.broker.logstreams.processor.reactive;
+package io.zeebe.broker.logstreams.processor;
 
 import io.zeebe.broker.task.data.TaskEvent;
 import io.zeebe.broker.task.data.TaskHeaders;
 import io.zeebe.broker.task.data.TaskState;
 import io.zeebe.broker.workflow.data.WorkflowEvent;
 import io.zeebe.logstreams.LogStreams;
+import io.zeebe.logstreams.impl.Loggers;
 import io.zeebe.logstreams.log.LogStream;
 import io.zeebe.logstreams.log.LogStreamWriter;
+import io.zeebe.logstreams.log.LogStreamWriterImpl;
+import io.zeebe.logstreams.log.LoggedEvent;
+import io.zeebe.logstreams.processor.EventProcessor;
+import io.zeebe.logstreams.processor.StreamProcessor;
+import io.zeebe.logstreams.processor.StreamProcessorBuilder;
+import io.zeebe.logstreams.processor.StreamProcessorController;
+import io.zeebe.logstreams.spi.SnapshotStorage;
+import io.zeebe.logstreams.spi.SnapshotSupport;
 import io.zeebe.protocol.Protocol;
 import io.zeebe.protocol.clientapi.EventType;
 import io.zeebe.protocol.impl.BrokerEventMetadata;
@@ -26,10 +35,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class ReactiveTest
+public class OldStreamCtrlTest
 {
 
-    private static final Logger LOG = io.zeebe.logstreams.impl.Loggers.LOGSTREAMS_LOGGER;
+    private static final Logger LOG = Loggers.LOGSTREAMS_LOGGER;
 
     @Rule
     public ActorSchedulerRule schedulerRule = new ActorSchedulerRule();
@@ -40,67 +49,53 @@ public class ReactiveTest
     private final AtomicLong taskEventProcessed = new AtomicLong(0);
     private final AtomicLong workflowEventProcessed = new AtomicLong(0);
 
-    private ReactiveStreamProcessorController reactiveStreamProcessorController;
+    private List<StreamProcessorController> controllerList = new ArrayList<>();
     private StreamProcessorController firstController;
     private LogStream defaultLogStream;
     private long firstWrittenTaskEvent;
     private StreamProcessorController secondController;
     private LogStreamWriter logStreamWriter;
     public static final int WORK_COUNT = 100_000;
-    private List<StreamProcessorController> controllerList = new ArrayList<>();
 
     @Before
     public void setUp()
     {
         defaultLogStream = LogStreams.createFsLogStream(BufferUtil.wrapString("default"), 0)
-                  .actorScheduler(schedulerRule.get())
-                  .deleteOnClose(true)
-                  .logDirectory(temporaryFolder.getRoot().toString())
-                  .build();
-
-        final StreamProcessorContext context = new StreamContextBuilder(0, "reactive", new Processor("no"))
             .actorScheduler(schedulerRule.get())
-            .logStream(defaultLogStream)
+            .deleteOnClose(true)
+            .logDirectory(temporaryFolder.getRoot().toString())
             .build();
 
-        context.logStreamWriter.wrap(defaultLogStream);
-        reactiveStreamProcessorController = new ReactiveStreamProcessorController(context);
+        final SnapshotStorage storage = LogStreams.createFsSnapshotStore(temporaryFolder.getRoot().toString()).build();
 
-        firstController = createStreamProcessController("first");
+        logStreamWriter = new LogStreamWriterImpl();
+        logStreamWriter.wrap(defaultLogStream);
+
+        firstController = createStreamProcessController(storage, "first");
         controllerList.add(firstController);
-        secondController = createStreamProcessController("second");
+        secondController = createStreamProcessController(storage, "second");
         controllerList.add(secondController);
-
-
-        defaultLogStream.openAsync().join();
-        defaultLogStream.openLogStreamController().join();
-        firstController.openAsync().join();
-        secondController.openAsync().join();
 
         for (int i = 0; i < 3; i++)
         {
-            final StreamProcessorController streamProcessController = createStreamProcessController("" + i);
+            final StreamProcessorController streamProcessController = createStreamProcessController(storage, "" + i);
             controllerList.add(streamProcessController);
-            streamProcessController.openAsync().join();
         }
 
-        reactiveStreamProcessorController.openAsync().join();
+        defaultLogStream.openAsync().join();
+        defaultLogStream.openLogStreamController().join();
 
-
-        logStreamWriter = context.logStreamWriter;
         firstWrittenTaskEvent = writeTaskEvent(logStreamWriter);
     }
 
-    private StreamProcessorController createStreamProcessController(String name)
+    private StreamProcessorController createStreamProcessController(SnapshotStorage storage, String name)
     {
-        final Processor secondProcessor = new Processor(name + "-task");
-        final StreamProcessorContext context = new StreamContextBuilder(0, name, secondProcessor)
+        return new StreamProcessorBuilder(0, name, new Processor(name + "-task"))
             .actorScheduler(schedulerRule.get())
             .logStream(defaultLogStream)
+            .snapshotStorage(storage)
             .build();
-        return new StreamProcessorController(context);
     }
-
 
     @After
     public void close()
@@ -108,104 +103,15 @@ public class ReactiveTest
         LOG.info("Processed task events {}", taskEventProcessed);
         LOG.info("Processed workflow events {}", workflowEventProcessed);
 
-        reactiveStreamProcessorController.closeAsync().join();
         controllerList.forEach((c) -> c.closeAsync().join());
         defaultLogStream.closeAsync().join();
-    }
-
-    @Test
-    public void shouldDistributeOnlyTaskEvents()
-    {
-        // given
-        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
-
-        // when
-        defaultLogStream.setCommitPosition(firstWrittenTaskEvent);
-
-        // then
-        TestUtil.waitUntil(() -> taskEventProcessed.get() == 1);
-        assertThat(workflowEventProcessed.get()).isEqualTo(0);
-    }
-
-    @Test
-    public void shouldDistributeOnlyTaskEventsControllerForOtherEventsShouldNotBeenCalled()
-    {
-        // given
-        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
-        reactiveStreamProcessorController.registerForEvent(EventType.WORKFLOW_EVENT, secondController).join();
-
-        // when
-        defaultLogStream.setCommitPosition(firstWrittenTaskEvent);
-
-        // then
-        TestUtil.waitUntil(() -> taskEventProcessed.get() == 1);
-        assertThat(workflowEventProcessed.get()).isEqualTo(0);
-    }
-
-    @Test
-    public void shouldDistributeTaskEventsOnTwiceRegistration()
-    {
-        // given
-        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
-        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
-
-        // when
-        defaultLogStream.setCommitPosition(firstWrittenTaskEvent);
-
-        // then
-        TestUtil.waitUntil(() -> taskEventProcessed.get() == 2);
-        assertThat(workflowEventProcessed.get()).isEqualTo(0);
-    }
-
-    @Test
-    public void shouldDistributeTaskEventsOnTwoSeparateControllers()
-    {
-        // given
-        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
-        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, secondController).join();
-
-        // when
-        defaultLogStream.setCommitPosition(firstWrittenTaskEvent);
-
-        // then
-        TestUtil.waitUntil(() -> taskEventProcessed.get() == 2);
-        assertThat(workflowEventProcessed.get()).isEqualTo(0);
-    }
-
-    @Test
-    public void shouldCopyEventRefForEachProcessing()
-    {
-        // given
-        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
-        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, secondController).join();
-        defaultLogStream.setCommitPosition(firstWrittenTaskEvent);
-
-        // when
-        TestUtil.waitUntil(() -> taskEventProcessed.get() == 2);
-        assertThat(workflowEventProcessed.get()).isEqualTo(0);
-
-        // then
-        final Processor firstStreamProcessor = (Processor) firstController.getStreamProcessor();
-        final TaskEventProcessor firstTaskEventProcessor = firstStreamProcessor.taskEventProcessor;
-        final TaskEvent firstTaskEvent = firstTaskEventProcessor.taskEvent;
-
-        final Processor secondStreamProcessor = (Processor) secondController.getStreamProcessor();
-        final TaskEventProcessor secondTaskEventProcessor = secondStreamProcessor.taskEventProcessor;
-        final TaskEvent secondTaskEvent = secondTaskEventProcessor.taskEvent;
-
-        assertThat(firstTaskEvent != secondTaskEvent).isTrue();
-        assertThat(firstTaskEvent).isEqualTo(secondTaskEvent);
-
-        assertThat(firstTaskEvent.getType()).isNotEqualTo(BufferUtil.wrapString(firstStreamProcessor.taskType));
-        assertThat(secondTaskEvent.getType()).isNotEqualTo(BufferUtil.wrapString(secondStreamProcessor.taskType));
     }
 
     @Test
     public void shouldProcessBunchOfTaskEvents()
     {
         // given
-        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
-
+        firstController.openAsync().join();
         final long lastEventPos = writeTaskEvents(logStreamWriter, WORK_COUNT);
         TestUtil.waitUntil(() -> defaultLogStream.getCurrentAppenderPosition() > lastEventPos);
 
@@ -222,8 +128,8 @@ public class ReactiveTest
     public void shouldProcessBunchOfTaskEventsWithTwoControllers()
     {
         // given
-        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
-        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, secondController).join();
+        firstController.openAsync().join();
+        secondController.openAsync().join();
 
         final long lastEventPos = writeTaskEvents(logStreamWriter, WORK_COUNT);
         TestUtil.waitUntil(() -> defaultLogStream.getCurrentAppenderPosition() > lastEventPos);
@@ -241,16 +147,17 @@ public class ReactiveTest
 
 
     @Test
-    public void shouldProcessBunchOfTaskEventsWithFiveControllers()
+    public void shouldProcessBunchOfTaskEventsWithAllControllers()
     {
         // given
-        for (StreamProcessorController controller : controllerList)
-        {
-            reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, controller).join();
-        }
-
         final long lastEventPos = writeTaskEvents(logStreamWriter, WORK_COUNT);
         TestUtil.waitUntil(() -> defaultLogStream.getCurrentAppenderPosition() > lastEventPos);
+
+        for (StreamProcessorController controller : controllerList)
+        {
+            controller.openAsync().join();
+        }
+
 
         // when
         final long start = System.currentTimeMillis();
@@ -313,7 +220,7 @@ public class ReactiveTest
 
         final TaskHeaders headers = taskEvent.headers();
         headers.setBpmnProcessId(BufferUtil.wrapString("processId"))
-                .setActivityId(BufferUtil.wrapString("activityId"));
+            .setActivityId(BufferUtil.wrapString("activityId"));
 
         long lastPosition = 0;
         for (int i = 0; i < count; i++)
@@ -356,18 +263,27 @@ public class ReactiveTest
         private final String taskType;
         TaskEventProcessor taskEventProcessor;
         WorkflowEventProcessor workflowEventProcessor;
+        private BrokerEventMetadata brokerEventMetadata;
 
         public Processor(String taskType)
         {
             this.taskType = taskType;
             this.taskEventProcessor = new TaskEventProcessor(taskType);
             this.workflowEventProcessor = new WorkflowEventProcessor();
+            brokerEventMetadata = new BrokerEventMetadata();
         }
 
         @Override
-        public EventProcessor onEvent(EventRef event)
+        public SnapshotSupport getStateResource()
         {
-            if (event.getType() == EventType.TASK_EVENT)
+            return new NoopSnapshotSupport();
+        }
+
+        @Override
+        public EventProcessor onEvent(LoggedEvent event)
+        {
+            event.readMetadata(brokerEventMetadata);
+            if (brokerEventMetadata.getEventType() == EventType.TASK_EVENT)
             {
                 taskEventProcessor.nextEvent(event);
                 return taskEventProcessor;
@@ -389,9 +305,9 @@ public class ReactiveTest
             taskEvent.setType(BufferUtil.wrapString(taskType));
         }
 
-        public void nextEvent(EventRef ref)
+        public void nextEvent(LoggedEvent ref)
         {
-            ref.copyEvent(taskEvent);
+            ref.readValue(taskEvent);
         }
 
         @Override
@@ -405,9 +321,9 @@ public class ReactiveTest
     {
         WorkflowEvent workflowEvent = new WorkflowEvent();
 
-        public void nextEvent(EventRef ref)
+        public void nextEvent(LoggedEvent ref)
         {
-            ref.copyEvent(workflowEvent);
+            ref.readValue(workflowEvent);
         }
 
         @Override
@@ -417,4 +333,5 @@ public class ReactiveTest
             workflowEventProcessed.getAndIncrement();
         }
     }
+
 }
