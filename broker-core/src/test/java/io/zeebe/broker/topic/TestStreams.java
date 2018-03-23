@@ -182,12 +182,12 @@ public class TestStreams
 
     }
 
-    public StreamProcessorControl runStreamProcessor(String log, StreamProcessor streamProcessor)
+    public StreamProcessorControl initStreamProcessor(String log, StreamProcessor streamProcessor)
     {
-        return runStreamProcessor(log, 0, () -> streamProcessor);
+        return initStreamProcessor(log, 0, () -> streamProcessor);
     }
 
-    public StreamProcessorControl runStreamProcessor(String log, int streamProcessorId, Supplier<StreamProcessor> factory)
+    public StreamProcessorControl initStreamProcessor(String log, int streamProcessorId, Supplier<StreamProcessor> factory)
     {
         final LogStream stream = getLogStream(log);
 
@@ -198,8 +198,6 @@ public class TestStreams
 
         closeables.manage(control);
 
-        control.start();
-
         return control;
     }
 
@@ -209,7 +207,6 @@ public class TestStreams
         private final Supplier<StreamProcessor> factory;
         private final int streamProcessorId;
         private final LogStream stream;
-
 
         protected SuspendableStreamProcessor currentStreamProcessor;
         protected StreamProcessorController currentController;
@@ -384,8 +381,6 @@ public class TestStreams
         {
             this.context = context;
             wrappedProcessor.onOpen(this.context);
-
-            context.suspendController();
         }
 
         @Override

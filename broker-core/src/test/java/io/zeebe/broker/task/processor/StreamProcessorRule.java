@@ -1,7 +1,6 @@
 package io.zeebe.broker.task.processor;
 
 import java.util.function.Function;
-import java.util.stream.Stream;
 
 import org.junit.rules.ExternalResource;
 import org.junit.rules.RuleChain;
@@ -14,7 +13,6 @@ import io.zeebe.broker.logstreams.processor.TypedStreamEnvironment;
 import io.zeebe.broker.topic.StreamProcessorControl;
 import io.zeebe.broker.topic.TestStreams;
 import io.zeebe.broker.transport.clientapi.BufferingServerOutput;
-import io.zeebe.logstreams.log.LoggedEvent;
 import io.zeebe.logstreams.processor.StreamProcessor;
 import io.zeebe.msgpack.UnpackedObject;
 import io.zeebe.test.util.AutoCloseableRule;
@@ -54,7 +52,14 @@ public class StreamProcessorRule implements TestRule
 
     public StreamProcessorControl runStreamProcessor(Function<TypedStreamEnvironment, StreamProcessor> factory)
     {
-        return streams.runStreamProcessor(STREAM_NAME, 0, () -> factory.apply(streamEnvironment));
+        final StreamProcessorControl control = initStreamProcessor(factory);
+        control.start();
+        return control;
+    }
+
+    public StreamProcessorControl initStreamProcessor(Function<TypedStreamEnvironment, StreamProcessor> factory)
+    {
+        return streams.initStreamProcessor(STREAM_NAME, 0, () -> factory.apply(streamEnvironment));
     }
 
     public ControlledActorClock getClock()
@@ -62,9 +67,9 @@ public class StreamProcessorRule implements TestRule
         return clock;
     }
 
-    public Stream<LoggedEvent> events()
+    public TypedEventStream events()
     {
-        return streams.events(STREAM_NAME);
+        return new TypedEventStream(streams.events(STREAM_NAME));
     }
 
     public long writeEvent(long key, UnpackedObject value)

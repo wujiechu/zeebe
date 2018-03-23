@@ -11,11 +11,10 @@ import java.util.stream.Collectors;
 import org.junit.Rule;
 import org.junit.Test;
 
+import io.zeebe.broker.logstreams.processor.TypedEvent;
 import io.zeebe.broker.task.TaskQueueManagerService;
 import io.zeebe.broker.task.data.TaskEvent;
 import io.zeebe.broker.task.data.TaskState;
-import io.zeebe.broker.topic.Events;
-import io.zeebe.broker.topic.StreamProcessorControl;
 import io.zeebe.util.buffer.BufferUtil;
 
 public class TaskLockExpirationStreamProcessorTest
@@ -40,14 +39,10 @@ public class TaskLockExpirationStreamProcessorTest
         // given
         rule.getClock().pinCurrentTime();
 
-        final StreamProcessorControl control = rule.runStreamProcessor(e -> new TaskExpireLockStreamProcessor(
+        rule.runStreamProcessor(e -> new TaskExpireLockStreamProcessor(
                 e.buildStreamReader(),
                 e.buildStreamWriter())
             .createStreamProcessor(e));
-
-        // TODO: das hier ist nicht intuitiv
-        control.blockAfterEvent(e -> false);
-        control.unblock();
 
         rule.writeEvent(1, taskLocked());
         rule.writeEvent(2, taskLocked());
@@ -56,17 +51,14 @@ public class TaskLockExpirationStreamProcessorTest
         rule.getClock().addTime(TaskQueueManagerService.LOCK_EXPIRATION_INTERVAL.plus(Duration.ofSeconds(1)));
 
         // then
-
-        // TODO: vll kann man hier auch eigene Subklassen haben, die nettere Filtermethoden haben, z.B. filterByState(..)
-        final List<Long> expirationEvents = doRepeatedly(
+        final List<TypedEvent<TaskEvent>> expirationEvents = doRepeatedly(
             () -> rule.events()
-                .filter(Events::isTaskEvent)
-                .filter(e -> Events.asTaskEvent(e).getState() == TaskState.EXPIRE_LOCK)
-                .map(e -> e.getKey())
+                .onlyTaskEvents()
+                .inState(TaskState.EXPIRE_LOCK)
                 .collect(Collectors.toList()))
             .until(l -> l.size() == 2);
 
-        assertThat(expirationEvents).containsExactlyInAnyOrder(1L, 2L);
+        assertThat(expirationEvents).extracting("key").containsExactlyInAnyOrder(1L, 2L);
     }
 
     @Test
