@@ -106,7 +106,7 @@ public class TaskExpireLockStreamProcessor implements StreamProcessorLifecycleAw
         return lockExpirationTime <= ActorClock.currentTimeMillis();
     }
 
-    // TODO: naming
+    // TODO: naming; reiterate how to create stream processors
     public TypedStreamProcessor createStreamProcessor(TypedStreamEnvironment environment)
     {
         final TypedEventProcessor<TaskEvent> registerTask = new TypedEventProcessor<TaskEvent>()

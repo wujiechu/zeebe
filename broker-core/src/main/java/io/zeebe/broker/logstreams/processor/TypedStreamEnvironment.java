@@ -59,6 +59,11 @@ public class TypedStreamEnvironment
         return output;
     }
 
+    public LogStream getStream()
+    {
+        return stream;
+    }
+
     public TypedEventStreamProcessorBuilder newStreamProcessor()
     {
         return new TypedEventStreamProcessorBuilder(this);
