@@ -17,8 +17,13 @@
  */
 package io.zeebe.broker.logstreams.processor;
 
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.List;
+
 import io.zeebe.broker.system.log.PartitionEvent;
 import io.zeebe.broker.system.log.TopicEvent;
+import io.zeebe.broker.task.data.TaskEvent;
 import io.zeebe.broker.workflow.data.DeploymentEvent;
 import io.zeebe.broker.workflow.data.WorkflowEvent;
 import io.zeebe.logstreams.log.LogStream;
@@ -35,10 +40,6 @@ import io.zeebe.transport.ServerOutput;
 import io.zeebe.util.ReflectUtil;
 import io.zeebe.util.sched.ActorControl;
 import io.zeebe.util.sched.future.ActorFuture;
-
-import java.util.ArrayList;
-import java.util.EnumMap;
-import java.util.List;
 
 @SuppressWarnings({"rawtypes", "unchecked"})
 public class TypedStreamProcessor implements StreamProcessor
@@ -160,6 +161,10 @@ public class TypedStreamProcessor implements StreamProcessor
         else if (value instanceof WorkflowEvent)
         {
             return ((WorkflowEvent) value).getState();
+        }
+        else if (value instanceof TaskEvent)
+        {
+            return ((TaskEvent) value).getState();
         }
         else
         {
