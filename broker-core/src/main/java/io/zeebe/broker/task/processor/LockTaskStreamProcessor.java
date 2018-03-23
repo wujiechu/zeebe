@@ -49,7 +49,7 @@ import org.slf4j.Logger;
 
 public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
 {
-    private static final Logger LOG = new ZbLogger(LockTaskStreamProcessor.class);
+    public static final Logger LOG = new ZbLogger(LockTaskStreamProcessor.class);
 
     protected final BrokerEventMetadata targetEventMetadata = new BrokerEventMetadata();
 
@@ -185,6 +185,7 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
             creditsBuffer.handleRequests();
         });
 
+        LOG.warn("FINDME offering credits request {}", request);
         return this.creditsBuffer.offerRequest(request);
     }
 

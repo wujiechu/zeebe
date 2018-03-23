@@ -17,6 +17,7 @@
  */
 package io.zeebe.broker.task;
 
+import io.zeebe.broker.task.processor.LockTaskStreamProcessor;
 import org.agrona.BitUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.MessageHandler;
@@ -88,6 +89,7 @@ public class CreditsRequestBuffer
         public void onMessage(int msgTypeId, MutableDirectBuffer buffer, int index, int length)
         {
             request.wrap(buffer, index, length);
+            LockTaskStreamProcessor.LOG.warn("FINDME consuming credit requests {}", request);
             requestConsumer.accept(request);
         }
 

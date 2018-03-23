@@ -104,4 +104,10 @@ public class CreditsRequest implements BufferReader
     {
         return content.hashCode();
     }
+
+    @Override
+    public String toString()
+    {
+        return "CreditRequest { subscriberKey: " + getSubscriberKey() + ", credits: " + getCredits() + " }";
+    }
 }
