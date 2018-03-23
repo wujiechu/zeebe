@@ -17,7 +17,9 @@
  */
 package io.zeebe.broker.task.processor;
 
-import io.zeebe.broker.Loggers;
+import static io.zeebe.protocol.clientapi.EventType.TASK_EVENT;
+import static io.zeebe.util.EnsureUtil.*;
+
 import io.zeebe.broker.logstreams.processor.MetadataFilter;
 import io.zeebe.broker.logstreams.processor.NoopSnapshotSupport;
 import io.zeebe.broker.task.CreditsRequest;
@@ -44,9 +46,6 @@ import io.zeebe.util.sched.clock.ActorClock;
 import io.zeebe.util.sched.future.ActorFuture;
 import org.agrona.DirectBuffer;
 import org.slf4j.Logger;
-
-import static io.zeebe.protocol.clientapi.EventType.TASK_EVENT;
-import static io.zeebe.util.EnsureUtil.*;
 
 public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
 {
