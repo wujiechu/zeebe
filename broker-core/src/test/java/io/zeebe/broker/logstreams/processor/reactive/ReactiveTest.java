@@ -50,7 +50,7 @@ public class ReactiveTest
                   .logDirectory(temporaryFolder.getRoot().toString())
                   .build();
 
-        final StreamProcessorContext context = new StreamContextBuilder(0, "reactive", new Processor())
+        final StreamProcessorContext context = new StreamContextBuilder(0, "reactive", new Processor("no"))
             .actorScheduler(schedulerRule.get())
             .logStream(defaultLogStream)
             .build();
@@ -58,7 +58,7 @@ public class ReactiveTest
         context.logStreamWriter.wrap(defaultLogStream);
         reactiveStreamProcessorController = new ReactiveStreamProcessorController(context);
 
-        final Processor firstProcessor = new Processor();
+        final Processor firstProcessor = new Processor("first-task");
         final StreamProcessorContext firstControllerCtx = new StreamContextBuilder(0, "first", firstProcessor)
             .actorScheduler(schedulerRule.get())
             .logStream(defaultLogStream)
@@ -66,7 +66,7 @@ public class ReactiveTest
         firstController = new StreamProcessorController(firstControllerCtx);
 
 
-        final Processor secondProcessor = new Processor();
+        final Processor secondProcessor = new Processor("second-task");
         final StreamProcessorContext secondControllerCtx = new StreamContextBuilder(0, "second", secondProcessor)
             .actorScheduler(schedulerRule.get())
             .logStream(defaultLogStream)
@@ -173,8 +173,10 @@ public class ReactiveTest
 
         assertThat(firstTaskEvent != secondTaskEvent).isTrue();
         assertThat(firstTaskEvent).isEqualTo(secondTaskEvent);
-    }
 
+        assertThat(firstTaskEvent.getType()).isNotEqualTo(BufferUtil.wrapString(firstStreamProcessor.taskType));
+        assertThat(secondTaskEvent.getType()).isNotEqualTo(BufferUtil.wrapString(secondStreamProcessor.taskType));
+    }
 
 
     private long writeTaskEvent(LogStreamWriter writer)
@@ -212,8 +214,16 @@ public class ReactiveTest
 
     private class Processor implements StreamProcessor
     {
-        TaskEventProcessor taskEventProcessor = new TaskEventProcessor();
-        WorkflowEventProcessor workflowEventProcessor = new WorkflowEventProcessor();
+        private final String taskType;
+        TaskEventProcessor taskEventProcessor;
+        WorkflowEventProcessor workflowEventProcessor;
+
+        public Processor(String taskType)
+        {
+            this.taskType = taskType;
+            this.taskEventProcessor = new TaskEventProcessor(taskType);
+            this.workflowEventProcessor = new WorkflowEventProcessor();
+        }
 
         @Override
         public EventProcessor onEvent(EventRef event)
@@ -234,6 +244,11 @@ public class ReactiveTest
     private class TaskEventProcessor implements EventProcessor
     {
         TaskEvent taskEvent = new TaskEvent();
+
+        public TaskEventProcessor(String taskType)
+        {
+            taskEvent.setType(BufferUtil.wrapString(taskType));
+        }
 
         public void nextEvent(EventRef ref)
         {
