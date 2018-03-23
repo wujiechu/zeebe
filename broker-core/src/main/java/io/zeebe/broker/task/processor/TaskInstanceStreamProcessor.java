@@ -133,8 +133,7 @@ public class TaskInstanceStreamProcessor
                 event.getValue().setState(TaskState.LOCKED);
                 isLocked = true;
             }
-
-            if (!isLocked)
+            else
             {
                 event.getValue().setState(TaskState.LOCK_REJECTED);
             }

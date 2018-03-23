@@ -3,7 +3,10 @@ package io.zeebe.broker.task.processor;
 import static io.zeebe.test.util.TestUtil.waitUntil;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -36,37 +39,104 @@ public class TaskInstanceStreamProcessorTest
     public void setUp()
     {
         MockitoAnnotations.initMocks(this);
+        when(subscriptionManager.increaseSubscriptionCreditsAsync(any())).thenReturn(true);
     }
 
     @Test
     public void todo()
     {
-        fail("port tests from old test");
+        fail("Plenty of buffers are not released; see logs");
     }
 
     @Test
     public void shouldCompleteExpiredTask()
     {
-        fail("implement");
+        // given
+        rule.getClock().pinCurrentTime();
+
+        final long key = 1;
+        rule.runStreamProcessor(this::buildStreamProcessor);
+
+        rule.writeEvent(key, create());
+        waitForEventInState(TaskState.CREATED);
+
+        rule.writeEvent(key, lock(nowPlus(Duration.ofSeconds(30))));
+        waitForEventInState(TaskState.LOCKED);
+
+        rule.writeEvent(key, expireLock());
+        waitForEventInState(TaskState.LOCK_EXPIRED);
+
+        // when
+        rule.writeEvent(key, complete());
+
+        // then
+        waitForEventInState(TaskState.COMPLETED);
+
+        final List<TypedEvent<TaskEvent>> taskEvents = rule.events().onlyTaskEvents().collect(Collectors.toList());
+        assertThat(taskEvents).extracting("value.state")
+            .containsExactly(
+                    TaskState.CREATE,
+                    TaskState.CREATED,
+                    TaskState.LOCK,
+                    TaskState.LOCKED,
+                    TaskState.EXPIRE_LOCK,
+                    TaskState.LOCK_EXPIRED,
+                    TaskState.COMPLETE,
+                    TaskState.COMPLETED);
     }
 
     @Test
     public void shouldLockOnlyOnce()
     {
-        fail("implement");
+        // given
+        rule.getClock().pinCurrentTime();
+
+        final long key = 1;
+        final StreamProcessorControl control = rule.runStreamProcessor(this::buildStreamProcessor);
+        control.blockAfterTaskEvent(e -> e.getValue().getState() == TaskState.CREATED);
+
+        rule.writeEvent(key, create());
+        waitForEventInState(TaskState.CREATED);
+
+        // when
+        rule.writeEvent(key, lock(nowPlus(Duration.ofSeconds(30))));
+        rule.writeEvent(key, lock(nowPlus(Duration.ofSeconds(30))));
+        control.unblock();
+
+        // then
+        waitForEventInState(TaskState.LOCK_REJECTED);
+
+        final List<TypedEvent<TaskEvent>> taskEvents = rule.events().onlyTaskEvents().collect(Collectors.toList());
+        assertThat(taskEvents).extracting("value.state")
+            .containsExactly(
+                    TaskState.CREATE,
+                    TaskState.CREATED,
+                    TaskState.LOCK,
+                    TaskState.LOCK,
+                    TaskState.LOCKED,
+                    TaskState.LOCK_REJECTED);
     }
 
     @Test
     public void shouldRejectLockIfTaskNotFound()
     {
-        fail("implement");
-    }
+        // given
+        rule.getClock().pinCurrentTime();
 
-    @Test
-    public void shouldRejectLockIfTaskAlreadyLocked()
-    {
+        final long key = 1;
+        rule.runStreamProcessor(this::buildStreamProcessor);
 
-        fail("implement");
+        // when
+        rule.writeEvent(key, lock(nowPlus(Duration.ofSeconds(30))));
+
+        // then
+        waitForEventInState(TaskState.LOCK_REJECTED);
+
+        final List<TypedEvent<TaskEvent>> taskEvents = rule.events().onlyTaskEvents().collect(Collectors.toList());
+        assertThat(taskEvents).extracting("value.state")
+            .containsExactly(
+                    TaskState.LOCK,
+                    TaskState.LOCK_REJECTED);
     }
 
     @Test
@@ -80,7 +150,7 @@ public class TaskInstanceStreamProcessorTest
         waitForEventInState(TaskState.CREATED);
 
         control.blockAfterTaskEvent(e -> e.getValue().getState() == TaskState.LOCKED);
-        rule.writeEvent(key, lock(rule.getClock().getCurrentTime().plusSeconds(30)));
+        rule.writeEvent(key, lock(nowPlus(Duration.ofSeconds(30))));
         waitForEventInState(TaskState.LOCKED);
 
         // when
@@ -104,15 +174,20 @@ public class TaskInstanceStreamProcessorTest
                     TaskState.LOCK_EXPIRATION_REJECTED);
     }
 
+    private Instant nowPlus(Duration duration)
+    {
+        return rule.getClock().getCurrentTime().plus(duration);
+    }
 
     @Test
-    public void shouldRejectExpireCommandIfTaskCREATED()
+    public void shouldRejectExpireCommandIfTaskCreated()
     {
-        fail("adapt");
-
         // given
         final long key = 1;
         rule.runStreamProcessor(this::buildStreamProcessor);
+
+        rule.writeEvent(key, create());
+        waitForEventInState(TaskState.CREATED);
 
         // when
         rule.writeEvent(key, expireLock());
@@ -123,6 +198,8 @@ public class TaskInstanceStreamProcessorTest
         final List<TypedEvent<TaskEvent>> taskEvents = rule.events().onlyTaskEvents().collect(Collectors.toList());
         assertThat(taskEvents).extracting("value.state")
             .containsExactly(
+                    TaskState.CREATE,
+                    TaskState.CREATED,
                     TaskState.EXPIRE_LOCK,
                     TaskState.LOCK_EXPIRATION_REJECTED);
     }
@@ -138,7 +215,7 @@ public class TaskInstanceStreamProcessorTest
         waitForEventInState(TaskState.CREATED);
 
         control.blockAfterTaskEvent(e -> e.getValue().getState() == TaskState.LOCKED);
-        rule.writeEvent(key, lock(rule.getClock().getCurrentTime().plusSeconds(30)));
+        rule.writeEvent(key, lock(nowPlus(Duration.ofSeconds(30))));
         waitForEventInState(TaskState.LOCKED);
 
         // when
@@ -174,7 +251,7 @@ public class TaskInstanceStreamProcessorTest
         waitForEventInState(TaskState.CREATED);
 
         control.blockAfterTaskEvent(e -> e.getValue().getState() == TaskState.LOCKED);
-        rule.writeEvent(key, lock(rule.getClock().getCurrentTime().plusSeconds(30)));
+        rule.writeEvent(key, lock(nowPlus(Duration.ofSeconds(30))));
         waitForEventInState(TaskState.LOCKED);
 
         // when
