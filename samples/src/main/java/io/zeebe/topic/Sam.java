@@ -15,9 +15,10 @@
  */
 package io.zeebe.topic;
 
-import java.util.Properties;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 import io.zeebe.client.ClientProperties;
 import io.zeebe.client.ZeebeClient;
@@ -26,7 +27,7 @@ import io.zeebe.client.impl.ZeebeClientImpl;
 public class Sam
 {
 
-    public static void main(final String[] args) throws InterruptedException
+    public static void main(final String[] args) throws InterruptedException, ExecutionException
     {
         final String brokerContactPoint = "127.0.0.1:51015";
 
@@ -44,16 +45,11 @@ public class Sam
             client.topics().create(topicName, 1).execute();
             client.workflows().deploy(topicName).addResourceFromClasspath("demoProcess.bpmn").execute();
 
-            final int instances = 3_000;
+            final int instances = 20_000;
+            final int maxRequests = 100;
+            final List<Future<?>> futures = new ArrayList<>(maxRequests);
 
-            long start = System.currentTimeMillis();
-            for (int i = 0; i < instances; i++)
-            {
-                client.workflows().create(topicName).bpmnProcessId("demoProcess").payload("{\"a\": \"b\"}").execute();
-            }
-            long end = System.currentTimeMillis();
-
-            System.out.println("Created " + instances + " workflow instances in " + (end - start) + "ms");
+            final CountDownLatch latch = new CountDownLatch(instances);
 
             client.tasks()
                   .newTaskSubscription(topicName)
@@ -61,42 +57,34 @@ public class Sam
                   .lockOwner("foo")
                   .lockTime(30_000)
                   .taskFetchSize(30)
-                  .handler((c, task) -> c.complete(task).payload(task.getPayload()).execute())
+                  .handler((c, task) -> latch.countDown())
                   .open();
 
-            client.tasks()
-                  .newTaskSubscription(topicName)
-                  .taskType("bar")
-                  .lockOwner("bar")
-                  .lockTime(30_000)
-                  .taskFetchSize(30)
-                  .handler((c, task) -> c.complete(task).execute())
-                  .open();
+            long start = System.currentTimeMillis();
+            long created = 0;
+            while (created < instances)
+            {
+                while (futures.size() < maxRequests)
+                {
+                    futures.add(client.workflows().create(topicName).bpmnProcessId("demoProcess").payload("{\"a\": \"b\"}").executeAsync());
+                }
 
-            client.tasks()
-                  .newTaskSubscription(topicName)
-                  .taskType("foobar")
-                  .lockOwner("foobar")
-                  .lockTime(30_000)
-                  .taskFetchSize(30)
-                  .handler((c, task) -> c.complete(task).execute())
-                  .open();
+                final Iterator<Future<?>> iterator = futures.iterator();
+                while (iterator.hasNext())
+                {
+                    final Future<?> future = iterator.next();
+                    if (future.isDone())
+                    {
+                        future.get();
+                        iterator.remove();
+                        created++;
+                    }
+                }
+            }
+            long end = System.currentTimeMillis();
 
-            final CountDownLatch latch = new CountDownLatch(instances);
+            System.out.println("Created " + instances + " workflow instances in " + (end - start) + "ms");
 
-            client.topics()
-                  .newSubscription(topicName)
-                  .name("counter")
-                  .startAtHeadOfTopic()
-                  .forcedStart()
-                  .workflowInstanceEventHandler(event ->
-                  {
-                      if (event.getState().equals("WORKFLOW_INSTANCE_COMPLETED"))
-                      {
-                          latch.countDown();
-                      }
-                  })
-                  .open();
 
             start = System.currentTimeMillis();
             latch.await();
