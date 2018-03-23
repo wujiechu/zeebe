@@ -150,17 +150,6 @@ public class WorkflowInstanceStreamProcessor implements StreamProcessor
     }
 
 
-    public void hintEvent(int type, EventRef eventRef)
-    {
-        if (type == EventType.TASK_EVENT)
-        {
-            eventRef.copyEvent(taskEvent);
-        }
-
-
-
-    }
-
     @Override
     public SnapshotSupport getStateResource()
     {

@@ -17,11 +17,8 @@ package io.zeebe.broker.logstreams.processor.reactive;
 
 import io.zeebe.logstreams.impl.Loggers;
 import io.zeebe.logstreams.log.LogStream;
-import io.zeebe.logstreams.log.LogStreamReader;
 import io.zeebe.logstreams.log.LogStreamWriter;
 import io.zeebe.logstreams.processor.EventFilter;
-import io.zeebe.logstreams.spi.SnapshotStorage;
-import io.zeebe.logstreams.spi.SnapshotWriter;
 import io.zeebe.util.sched.Actor;
 import io.zeebe.util.sched.ActorCondition;
 import io.zeebe.util.sched.ActorScheduler;
@@ -29,7 +26,6 @@ import io.zeebe.util.sched.future.ActorFuture;
 import io.zeebe.util.sched.future.CompletableActorFuture;
 import org.slf4j.Logger;
 
-import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -46,26 +42,15 @@ public class StreamProcessorController extends Actor
 
     private final LogStreamWriter logStreamWriter;
 
-    private final SnapshotStorage snapshotStorage;
-    private final Duration snapshotPeriod;
-
     private final ActorScheduler actorScheduler;
     private final AtomicBoolean isOpened = new AtomicBoolean(false);
     private final AtomicBoolean isFailed = new AtomicBoolean(false);
 
     private final EventFilter eventFilter;
-    private final EventFilter reprocessingEventFilter;
-    private final boolean isReadOnlyProcessor;
 
     private final Runnable nextEvent = this::nextEvent;
 
-    private CompletableActorFuture<Void> openFuture;
-
-    private long snapshotPosition = -1L;
-    private long lastSourceEventPosition = -1L;
     private long eventPosition = -1L;
-    private long lastSuccessfulProcessedEventPosition = -1L;
-    private long lastWrittenEventPosition = -1L;
 
     private EventProcessor eventProcessor;
     private ActorCondition onCommitPositionUpdatedCondition;
@@ -73,30 +58,27 @@ public class StreamProcessorController extends Actor
     private boolean suspended = false;
 
     private final Deque<EventRef> queue = new ArrayDeque<>();
+    private EventRef currentEvent;
+    private long lastSuccessfulProcessedEventPosition;
+    private long lastWrittenEventPosition;
 
     public StreamProcessorController(StreamProcessorContext context)
     {
         this.streamProcessorContext = context;
-        this.streamProcessorContext.setActorControl(actor);
-
-        this.streamProcessorContext.setSuspendRunnable(this::suspend);
-        this.streamProcessorContext.setResumeRunnable(this::resume);
 
         this.actorScheduler = context.getActorScheduler();
         this.streamProcessor = context.getStreamProcessor();
         this.logStreamWriter = context.getLogStreamWriter();
-        this.snapshotStorage = context.getSnapshotStorage();
-        this.snapshotPeriod = context.getSnapshotPeriod();
         this.eventFilter = context.getEventFilter();
-        this.reprocessingEventFilter = context.getReprocessingEventFilter();
-        this.isReadOnlyProcessor = context.isReadOnlyProcessor();
     }
 
 
     public void hintEvent(EventRef eventRef)
     {
+        LOG.debug("Hint event called outside {}", eventRef);
         actor.call(() ->
         {
+            LOG.debug("Offer event {} to queue ", eventRef.getPosition());
             queue.offer(eventRef);
 //            streamProcessor.nextEvent(type, eventRef);
             actor.submit(nextEvent);
@@ -113,11 +95,7 @@ public class StreamProcessorController extends Actor
     {
         if (isOpened.compareAndSet(false, true))
         {
-            openFuture = new CompletableActorFuture<>();
-
-            actorScheduler.submitActor(this);
-
-            return openFuture;
+            return actorScheduler.submitActor(this);
         }
         else
         {
@@ -128,21 +106,16 @@ public class StreamProcessorController extends Actor
     @Override
     protected void onActorStarted()
     {
-        if (openFuture != null)
-        {
-            openFuture.complete(null);
-        }
-
-        actor.runAtFixedRate(snapshotPeriod, this::createSnapshot);
+        final LogStream logStream = streamProcessorContext.getLogStream();
+        logStreamWriter.wrap(logStream);
     }
-
 
     private void nextEvent()
     {
         if (isOpened() && !isSuspended())
         {
-
             final EventRef eventRef = queue.poll();
+            currentEvent = eventRef;
 
             if (eventRef != null)
             {
@@ -268,53 +241,6 @@ public class StreamProcessorController extends Actor
         }
     }
 
-    private void createSnapshot()
-    {
-        if (currentEvent != null)
-        {
-            final long commitPosition = streamProcessorContext.getLogStream().getCommitPosition();
-
-            final boolean snapshotAlreadyPresent = lastSuccessfulProcessedEventPosition <= snapshotPosition;
-
-            if (!snapshotAlreadyPresent)
-            {
-                // ensure that the last written event was committed
-                if (commitPosition >= lastWrittenEventPosition)
-                {
-                    writeSnapshot(lastSuccessfulProcessedEventPosition);
-                }
-            }
-        }
-    }
-
-    protected void writeSnapshot(final long eventPosition)
-    {
-        SnapshotWriter snapshotWriter = null;
-        try
-        {
-            final long start = System.currentTimeMillis();
-            final String name = streamProcessorContext.getName();
-            LOG.info("Write snapshot for stream processor {} at event position {}.", name, eventPosition);
-
-            snapshotWriter = snapshotStorage.createSnapshot(name, eventPosition);
-
-            snapshotWriter.writeSnapshot(streamProcessor.getStateResource());
-            snapshotWriter.commit();
-            LOG.info("Creation of snapshot {} took {} ms.", name, System.currentTimeMillis() - start);
-
-            snapshotPosition = eventPosition;
-        }
-        catch (Exception e)
-        {
-            LOG.error("Stream processor '{}' failed. Can not write snapshot.", getName(), e);
-
-            if (snapshotWriter != null)
-            {
-                snapshotWriter.abort();
-            }
-        }
-    }
-
     public ActorFuture<Void> closeAsync()
     {
         if (isOpened.compareAndSet(true, false))
@@ -332,7 +258,6 @@ public class StreamProcessorController extends Actor
     {
         if (!isFailed())
         {
-            createSnapshot();
             streamProcessor.onClose();
         }
 
@@ -367,24 +292,9 @@ public class StreamProcessorController extends Actor
         return eventFilter;
     }
 
-    public EventFilter getReprocessingEventFilter()
-    {
-        return reprocessingEventFilter;
-    }
 
     public boolean isSuspended()
     {
         return suspended;
-    }
-
-    private void suspend()
-    {
-        suspended = true;
-    }
-
-    private void resume()
-    {
-        suspended = false;
-        actor.submit(nextEvent);
     }
 }

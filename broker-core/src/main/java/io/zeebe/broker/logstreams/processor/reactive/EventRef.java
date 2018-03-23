@@ -12,12 +12,15 @@ public final class EventRef implements Reusable
 
     private EventType type;
     private int refCount;
+    private long position;
     private UnpackedObject event;
 
     public EventRef(Consumer<EventRef> resetCallback)
     {
         this.resetCallback = resetCallback;
     }
+
+
 
     public void setRefCount(int refCount)
     {
@@ -39,6 +42,16 @@ public final class EventRef implements Reusable
         this.type = type;
     }
 
+    public long getPosition()
+    {
+        return position;
+    }
+
+    public void setPosition(long position)
+    {
+        this.position = position;
+    }
+
     public void copyEvent(UnpackedObject unpackedObject)
     {
         event.copy(unpackedObject);
@@ -53,10 +66,21 @@ public final class EventRef implements Reusable
     }
 
     @Override
+    public String toString()
+    {
+        return "EventRef{" +
+            ", type=" + type +
+            ", refCount=" + refCount +
+            ", position=" + position +
+            '}';
+    }
+
+    @Override
     public void reset()
     {
-        type = null;
         refCount = -1;
+        position = -1;
+        type = null;
         event = null;
     }
 }

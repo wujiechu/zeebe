@@ -19,11 +19,7 @@ import io.zeebe.logstreams.log.LogStream;
 import io.zeebe.logstreams.log.LogStreamReader;
 import io.zeebe.logstreams.log.LogStreamWriter;
 import io.zeebe.logstreams.processor.EventFilter;
-import io.zeebe.logstreams.spi.SnapshotStorage;
-import io.zeebe.util.sched.ActorControl;
 import io.zeebe.util.sched.ActorScheduler;
-
-import java.time.Duration;
 
 public class StreamProcessorContext
 {
@@ -31,24 +27,15 @@ public class StreamProcessorContext
     protected String name;
 
     protected StreamProcessor streamProcessor;
-    protected boolean isReadOnlyProcessor;
 
     protected LogStream logStream;
 
     protected LogStreamReader logStreamReader;
     protected LogStreamWriter logStreamWriter;
 
-    protected Duration snapshotPeriod;
-    protected SnapshotStorage snapshotStorage;
-
     protected ActorScheduler actorScheduler;
-    private ActorControl actorControl;
 
     protected EventFilter eventFilter;
-    protected EventFilter reprocessingEventFilter;
-
-    private Runnable suspendRunnable;
-    private Runnable resumeRunnable;
 
     public LogStream getLogStream()
     {
@@ -120,26 +107,6 @@ public class StreamProcessorContext
         this.logStreamWriter = logStreamWriter;
     }
 
-    public Duration getSnapshotPeriod()
-    {
-        return snapshotPeriod;
-    }
-
-    public void setSnapshotPeriod(Duration snapshotPeriod)
-    {
-        this.snapshotPeriod = snapshotPeriod;
-    }
-
-    public SnapshotStorage getSnapshotStorage()
-    {
-        return snapshotStorage;
-    }
-
-    public void setSnapshotStorage(SnapshotStorage snapshotStorage)
-    {
-        this.snapshotStorage = snapshotStorage;
-    }
-
     public void setEventFilter(EventFilter eventFilter)
     {
         this.eventFilter = eventFilter;
@@ -150,63 +117,6 @@ public class StreamProcessorContext
         return eventFilter;
     }
 
-    public void setReprocessingEventFilter(EventFilter reprocessingEventFilter)
-    {
-        this.reprocessingEventFilter = reprocessingEventFilter;
-    }
 
-    public EventFilter getReprocessingEventFilter()
-    {
-        return reprocessingEventFilter;
-    }
 
-    public void setReadOnly(boolean readOnly)
-    {
-        this.isReadOnlyProcessor = readOnly;
-    }
-
-    public boolean isReadOnlyProcessor()
-    {
-        return isReadOnlyProcessor;
-    }
-
-    public ActorControl getActorControl()
-    {
-        return actorControl;
-    }
-
-    public void setActorControl(ActorControl actorControl)
-    {
-        this.actorControl = actorControl;
-    }
-
-    public Runnable getSuspendRunnable()
-    {
-        return suspendRunnable;
-    }
-
-    public void setSuspendRunnable(Runnable suspendRunnable)
-    {
-        this.suspendRunnable = suspendRunnable;
-    }
-
-    public void suspendController()
-    {
-        suspendRunnable.run();
-    }
-
-    public Runnable getResumeRunnable()
-    {
-        return resumeRunnable;
-    }
-
-    public void setResumeRunnable(Runnable resumeRunnable)
-    {
-        this.resumeRunnable = resumeRunnable;
-    }
-
-    public void resumeController()
-    {
-        resumeRunnable.run();
-    }
 }

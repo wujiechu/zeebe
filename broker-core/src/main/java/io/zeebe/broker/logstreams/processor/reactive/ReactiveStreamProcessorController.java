@@ -26,8 +26,6 @@ import io.zeebe.logstreams.impl.Loggers;
 import io.zeebe.logstreams.log.LogStream;
 import io.zeebe.logstreams.log.LogStreamReader;
 import io.zeebe.logstreams.log.LoggedEvent;
-import io.zeebe.logstreams.processor.EventFilter;
-import io.zeebe.logstreams.spi.SnapshotWriter;
 import io.zeebe.msgpack.UnpackedObject;
 import io.zeebe.protocol.clientapi.EventType;
 import io.zeebe.protocol.impl.BrokerEventMetadata;
@@ -68,7 +66,6 @@ public class ReactiveStreamProcessorController extends Actor
     private final LogStreamReader logStreamReader;
 
     private final AtomicBoolean isOpened = new AtomicBoolean(false);
-    private final AtomicBoolean isFailed = new AtomicBoolean(false);
     private final BrokerEventMetadata brokerEventMetadata;
 
 
@@ -76,15 +73,11 @@ public class ReactiveStreamProcessorController extends Actor
     private final ReusableObjectList<EventRef> eventWindow;
     private final EnumMap<EventType, List<StreamProcessorController>> typedControllers;
 
-
     private ActorCondition actorCondition;
-    private CompletableActorFuture<Void> openFuture;
-
 
     public ReactiveStreamProcessorController(StreamProcessorContext context)
     {
         this.streamProcessorContext = context;
-        this.streamProcessorContext.setActorControl(actor);
 
         this.actorScheduler = context.getActorScheduler();
         this.logStreamReader = context.getLogStreamReader();
@@ -117,6 +110,8 @@ public class ReactiveStreamProcessorController extends Actor
     {
         actor.call(() ->
         {
+            LOG.debug("Release event ref {} and trigger new processing.", eventRef);
+
             eventWindow.remove(eventRef);
             actor.submit(this::processEvent);
         });
@@ -128,17 +123,22 @@ public class ReactiveStreamProcessorController extends Actor
         return streamProcessorContext.getName();
     }
 
-    public void registerForEvent(EventType eventType, StreamProcessorController controller)
+    public ActorFuture<Void> registerForEvent(EventType eventType, StreamProcessorController controller)
     {
-        List<StreamProcessorController> streamProcessorControllers = typedControllers.get(eventType);
-
-        if (streamProcessorControllers == null)
+        return actor.call(() ->
         {
-            streamProcessorControllers = new ArrayList<>();
-            typedControllers.put(eventType, streamProcessorControllers);
-        }
+            LOG.debug("Register {} for event type {}", controller, eventType);
 
-        streamProcessorControllers.add(controller);
+            List<StreamProcessorController> streamProcessorControllers = typedControllers.get(eventType);
+
+            if (streamProcessorControllers == null)
+            {
+                streamProcessorControllers = new ArrayList<>();
+                typedControllers.put(eventType, streamProcessorControllers);
+            }
+
+            streamProcessorControllers.add(controller);
+        });
     }
 
 
@@ -146,11 +146,7 @@ public class ReactiveStreamProcessorController extends Actor
     {
         if (isOpened.compareAndSet(false, true))
         {
-            openFuture = new CompletableActorFuture<>();
-
-            actorScheduler.submitActor(this);
-
-            return openFuture;
+            return actorScheduler.submitActor(this);
         }
         else
         {
@@ -166,13 +162,14 @@ public class ReactiveStreamProcessorController extends Actor
 
         this.actorCondition = actor.onCondition("on-event-commited", this::processEvent);
         logStream.registerOnCommitPositionUpdatedCondition(actorCondition);
-    }
 
+        LOG.debug("{} started", ReactiveStreamProcessorController.class.getName());
+    }
 
 
     private void processEvent()
     {
-
+        LOG.debug("Reactive event processing");
         /*
          * [              WINDOW                ]
          * [ (Event|Count) | ....               ]
@@ -186,6 +183,9 @@ public class ReactiveStreamProcessorController extends Actor
                 next.readMetadata(brokerEventMetadata);
 
                 final EventType eventType = brokerEventMetadata.getEventType();
+
+                LOG.debug("Process next event of type {} on position {}", eventType, next.getPosition());
+
                 final ReusableObjectList<? extends UnpackedObject> eventPool = eventPools.get(eventType);
                 if (eventPool.size() < EVENT_WINDIW_SIZE)
                 {
@@ -194,17 +194,32 @@ public class ReactiveStreamProcessorController extends Actor
                     final UnpackedObject event = eventPool.add();
                     next.readValue(event);
 
+
                     final EventRef eventRef = eventWindow.add();
                     eventRef.setEvent(event);
                     eventRef.setType(eventType);
                     eventRef.setRefCount(streamProcessorControllers.size());
+                    eventRef.setPosition(next.getPosition());
 
+
+                    LOG.debug("Distribute unpacked event to {} registered controller", streamProcessorControllers.size());
                     streamProcessorControllers.forEach((s) -> s.hintEvent(eventRef));
+
+                    actor.submit(this::processEvent);
                 }
-
-
-                actor.submit(this::processEvent);
+                else
+                {
+                    LOG.debug("Event pool for event of type {} is exhausted.", eventType);
+                }
             }
+            else
+            {
+                LOG.debug("No next event to process.");
+            }
+        }
+        else
+        {
+            LOG.debug("Capacity of event window reached.");
         }
     }
 

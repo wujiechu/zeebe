@@ -22,12 +22,6 @@ import io.zeebe.logstreams.spi.SnapshotSupport;
  */
 public interface StreamProcessor
 {
-    /**
-     * Returns the resource which holds the state of the processor.
-     *
-     * @return the processor state resource
-     */
-    SnapshotSupport getStateResource();
 
     /**
      * Returns a specific processor to process the event which is read from the
