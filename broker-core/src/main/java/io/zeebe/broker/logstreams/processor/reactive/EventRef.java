@@ -20,8 +20,6 @@ public final class EventRef implements Reusable
         this.resetCallback = resetCallback;
     }
 
-
-
     public void setRefCount(int refCount)
     {
         this.refCount = refCount;

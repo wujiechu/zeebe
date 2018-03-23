@@ -21,6 +21,8 @@ import org.junit.rules.TemporaryFolder;
 
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 public class ReactiveTest
 {
 
@@ -34,33 +36,49 @@ public class ReactiveTest
     private final AtomicLong workflowEventProcessed = new AtomicLong(0);
 
     private ReactiveStreamProcessorController reactiveStreamProcessorController;
-    private StreamProcessorController controller;
+    private StreamProcessorController firstController;
     private LogStream defaultLogStream;
     private long firstWrittenTaskEvent;
+    private StreamProcessorController secondController;
 
     @Before
     public void setUp()
     {
-        final Processor processor = new Processor();
         defaultLogStream = LogStreams.createFsLogStream(BufferUtil.wrapString("default"), 0)
                   .actorScheduler(schedulerRule.get())
                   .deleteOnClose(true)
                   .logDirectory(temporaryFolder.getRoot().toString())
                   .build();
 
-        final StreamProcessorContext context = new StreamContextBuilder(0, "reactive", processor)
+        final StreamProcessorContext context = new StreamContextBuilder(0, "reactive", new Processor())
             .actorScheduler(schedulerRule.get())
             .logStream(defaultLogStream)
             .build();
 
+        context.logStreamWriter.wrap(defaultLogStream);
         reactiveStreamProcessorController = new ReactiveStreamProcessorController(context);
 
-        controller = new StreamProcessorController(context);
+        final Processor firstProcessor = new Processor();
+        final StreamProcessorContext firstControllerCtx = new StreamContextBuilder(0, "first", firstProcessor)
+            .actorScheduler(schedulerRule.get())
+            .logStream(defaultLogStream)
+            .build();
+        firstController = new StreamProcessorController(firstControllerCtx);
+
+
+        final Processor secondProcessor = new Processor();
+        final StreamProcessorContext secondControllerCtx = new StreamContextBuilder(0, "second", secondProcessor)
+            .actorScheduler(schedulerRule.get())
+            .logStream(defaultLogStream)
+            .build();
+        secondController = new StreamProcessorController(secondControllerCtx);
 
         defaultLogStream.openAsync().join();
         defaultLogStream.openLogStreamController().join();
-        controller.openAsync().join();
+        firstController.openAsync().join();
+        secondController.openAsync().join();
         reactiveStreamProcessorController.openAsync().join();
+
 
         firstWrittenTaskEvent = writeTaskEvent(context.logStreamWriter);
 
@@ -77,14 +95,86 @@ public class ReactiveTest
     public void shouldDistributeOnlyTaskEvents()
     {
         // given
-        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, controller).join();
+        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
 
         // when
         defaultLogStream.setCommitPosition(firstWrittenTaskEvent);
 
         // then
         TestUtil.waitUntil(() -> taskEventProcessed.get() == 1);
+        assertThat(workflowEventProcessed.get()).isEqualTo(0);
     }
+
+    @Test
+    public void shouldDistributeOnlyTaskEventsControllerForOtherEventsShouldNotBeenCalled()
+    {
+        // given
+        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
+        reactiveStreamProcessorController.registerForEvent(EventType.WORKFLOW_EVENT, secondController).join();
+
+        // when
+        defaultLogStream.setCommitPosition(firstWrittenTaskEvent);
+
+        // then
+        TestUtil.waitUntil(() -> taskEventProcessed.get() == 1);
+        assertThat(workflowEventProcessed.get()).isEqualTo(0);
+    }
+
+    @Test
+    public void shouldDistributeTaskEventsOnTwiceRegistration()
+    {
+        // given
+        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
+        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
+
+        // when
+        defaultLogStream.setCommitPosition(firstWrittenTaskEvent);
+
+        // then
+        TestUtil.waitUntil(() -> taskEventProcessed.get() == 2);
+        assertThat(workflowEventProcessed.get()).isEqualTo(0);
+    }
+
+    @Test
+    public void shouldDistributeTaskEventsOnTwoSeparateControllers()
+    {
+        // given
+        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
+        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, secondController).join();
+
+        // when
+        defaultLogStream.setCommitPosition(firstWrittenTaskEvent);
+
+        // then
+        TestUtil.waitUntil(() -> taskEventProcessed.get() == 2);
+        assertThat(workflowEventProcessed.get()).isEqualTo(0);
+    }
+
+    @Test
+    public void shouldCopyEventRefForEachProcessing()
+    {
+        // given
+        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
+        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, secondController).join();
+        defaultLogStream.setCommitPosition(firstWrittenTaskEvent);
+
+        // when
+        TestUtil.waitUntil(() -> taskEventProcessed.get() == 2);
+        assertThat(workflowEventProcessed.get()).isEqualTo(0);
+
+        // then
+        final Processor firstStreamProcessor = (Processor) firstController.getStreamProcessor();
+        final TaskEventProcessor firstTaskEventProcessor = firstStreamProcessor.taskEventProcessor;
+        final TaskEvent firstTaskEvent = firstTaskEventProcessor.taskEvent;
+
+        final Processor secondStreamProcessor = (Processor) secondController.getStreamProcessor();
+        final TaskEventProcessor secondTaskEventProcessor = secondStreamProcessor.taskEventProcessor;
+        final TaskEvent secondTaskEvent = secondTaskEventProcessor.taskEvent;
+
+        assertThat(firstTaskEvent != secondTaskEvent).isTrue();
+        assertThat(firstTaskEvent).isEqualTo(secondTaskEvent);
+    }
+
 
 
     private long writeTaskEvent(LogStreamWriter writer)
@@ -122,8 +212,8 @@ public class ReactiveTest
 
     private class Processor implements StreamProcessor
     {
-        private TaskEventProcessor taskEventProcessor = new TaskEventProcessor();
-        private WorkflowEventProcessor workflowEventProcessor = new WorkflowEventProcessor();
+        TaskEventProcessor taskEventProcessor = new TaskEventProcessor();
+        WorkflowEventProcessor workflowEventProcessor = new WorkflowEventProcessor();
 
         @Override
         public EventProcessor onEvent(EventRef event)

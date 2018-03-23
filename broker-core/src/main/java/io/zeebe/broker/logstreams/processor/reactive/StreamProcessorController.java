@@ -75,7 +75,7 @@ public class StreamProcessorController extends Actor
 
     public void hintEvent(EventRef eventRef)
     {
-        LOG.debug("Hint event called outside {}", eventRef);
+        LOG.debug("Got event hint {}", eventRef);
         actor.call(() ->
         {
             LOG.debug("Offer event {} to queue ", eventRef.getPosition());
@@ -296,5 +296,10 @@ public class StreamProcessorController extends Actor
     public boolean isSuspended()
     {
         return suspended;
+    }
+
+    public StreamProcessor getStreamProcessor()
+    {
+        return streamProcessor;
     }
 }

@@ -120,7 +120,7 @@ public class ReactiveStreamProcessorController extends Actor
     @Override
     public String getName()
     {
-        return streamProcessorContext.getName();
+        return "ReactiveStreamProcessor";
     }
 
     public ActorFuture<Void> registerForEvent(EventType eventType, StreamProcessorController controller)
