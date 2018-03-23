@@ -37,17 +37,21 @@ import io.zeebe.logstreams.spi.SnapshotSupport;
 import io.zeebe.protocol.Protocol;
 import io.zeebe.protocol.clientapi.EventType;
 import io.zeebe.protocol.impl.BrokerEventMetadata;
+import io.zeebe.util.ZbLogger;
 import io.zeebe.util.buffer.BufferUtil;
 import io.zeebe.util.sched.ActorControl;
 import io.zeebe.util.sched.clock.ActorClock;
 import io.zeebe.util.sched.future.ActorFuture;
 import org.agrona.DirectBuffer;
+import org.slf4j.Logger;
 
 import static io.zeebe.protocol.clientapi.EventType.TASK_EVENT;
 import static io.zeebe.util.EnsureUtil.*;
 
 public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
 {
+    private static final Logger LOG = new ZbLogger(LockTaskStreamProcessor.class);
+
     protected final BrokerEventMetadata targetEventMetadata = new BrokerEventMetadata();
 
     protected final NoopSnapshotSupport noopSnapshotSupport = new NoopSnapshotSupport();
@@ -191,7 +195,7 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
         final int credits = request.getCredits();
 
         subscriptions.addCredits(subscriberKey, credits);
-        Loggers.SYSTEM_LOGGER.warn("FINDME increasing credits for subscription {} to {}", subscriberKey, credits);
+        LOG.warn("FINDME increasing credits for subscription {} to {}", subscriberKey, credits);
 
         context.resumeController();
     }
@@ -199,6 +203,8 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
     protected TaskSubscription getNextAvailableSubscription()
     {
         TaskSubscription nextSubscription = null;
+
+        LOG.warn("FINDME Choosing next subscription, current total credits {}", subscriptions.totalCredits);
 
         if (subscriptions.getTotalCredits() > 0)
         {
@@ -216,6 +222,7 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
                 final TaskSubscription subscription = taskDistributionIterator.next();
                 if (subscription.getCredits() > 0)
                 {
+                    LOG.warn("FINDME Choose subscription {}", subscription);
                     nextSubscription = subscription;
                 }
 
