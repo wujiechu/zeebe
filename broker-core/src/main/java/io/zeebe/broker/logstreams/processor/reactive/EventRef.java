@@ -27,6 +27,11 @@ public final class EventRef implements Reusable
         this.refCount.set(refCount);
     }
 
+    public UnpackedObject getEvent()
+    {
+        return event;
+    }
+
     public void setEvent(UnpackedObject event)
     {
         this.event = event;

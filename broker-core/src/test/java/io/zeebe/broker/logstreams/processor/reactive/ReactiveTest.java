@@ -2,6 +2,7 @@ package io.zeebe.broker.logstreams.processor.reactive;
 
 import io.zeebe.broker.Loggers;
 import io.zeebe.broker.task.data.TaskEvent;
+import io.zeebe.broker.task.data.TaskHeaders;
 import io.zeebe.broker.task.data.TaskState;
 import io.zeebe.broker.workflow.data.WorkflowEvent;
 import io.zeebe.logstreams.LogStreams;
@@ -40,6 +41,8 @@ public class ReactiveTest
     private LogStream defaultLogStream;
     private long firstWrittenTaskEvent;
     private StreamProcessorController secondController;
+    private LogStreamWriter logStreamWriter;
+    public static final int WORK_COUNT = 10_000;
 
     @Before
     public void setUp()
@@ -80,13 +83,16 @@ public class ReactiveTest
         reactiveStreamProcessorController.openAsync().join();
 
 
-        firstWrittenTaskEvent = writeTaskEvent(context.logStreamWriter);
+        logStreamWriter = context.logStreamWriter;
+        firstWrittenTaskEvent = writeTaskEvent(logStreamWriter);
 
     }
 
     @After
     public void close()
     {
+        Loggers.SERVICES_LOGGER.debug("Processed task events {}", taskEventProcessed);
+        Loggers.SERVICES_LOGGER.debug("Processed workflow events {}", workflowEventProcessed);
         defaultLogStream.closeAsync().join();
 
     }
@@ -179,6 +185,44 @@ public class ReactiveTest
     }
 
 
+
+    @Test
+    public void shouldProcessBunchOfTaskEvents()
+    {
+        // given
+        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
+
+        final long lastEventPos = writeTaskEvents(logStreamWriter, WORK_COUNT);
+        TestUtil.waitUntil(() -> defaultLogStream.getCurrentAppenderPosition() > lastEventPos);
+
+        // when
+        defaultLogStream.setCommitPosition(lastEventPos);
+
+        // then
+        TestUtil.waitUntil(() -> taskEventProcessed.get() >= WORK_COUNT);
+        assertThat(workflowEventProcessed.get()).isEqualTo(0);
+    }
+
+
+    @Test
+    public void shouldProcessBunchOfTaskEventsWithTwoControllers()
+    {
+        // given
+        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, firstController).join();
+        reactiveStreamProcessorController.registerForEvent(EventType.TASK_EVENT, secondController).join();
+
+        final long lastEventPos = writeTaskEvents(logStreamWriter, WORK_COUNT);
+        TestUtil.waitUntil(() -> defaultLogStream.getCurrentAppenderPosition() > lastEventPos);
+
+        // when
+        defaultLogStream.setCommitPosition(lastEventPos);
+
+        // then
+        TestUtil.waitUntil(() -> taskEventProcessed.get() >= WORK_COUNT * 2);
+        assertThat(workflowEventProcessed.get()).isEqualTo(0);
+    }
+
+
     private long writeTaskEvent(LogStreamWriter writer)
     {
         BrokerEventMetadata brokerEventMetadata = new BrokerEventMetadata();
@@ -210,6 +254,46 @@ public class ReactiveTest
         assert position > 0;
         Loggers.SYSTEM_LOGGER.debug("Wrote task event on pos {}", position);
         return position;
+    }
+
+
+    private long writeTaskEvents(LogStreamWriter writer, int count)
+    {
+        BrokerEventMetadata brokerEventMetadata = new BrokerEventMetadata();
+        brokerEventMetadata
+            .protocolVersion(Protocol.PROTOCOL_VERSION)
+            .eventType(EventType.TASK_EVENT);
+
+        TaskEvent taskEvent = new TaskEvent();
+        taskEvent
+            .setState(TaskState.CREATE)
+            .setRetries(3)
+            .setPayload(BufferUtil.wrapString("payload"));
+
+        final TaskHeaders headers = taskEvent.headers();
+        headers.setBpmnProcessId(BufferUtil.wrapString("processId"))
+                .setActivityId(BufferUtil.wrapString("activityId"));
+
+        long lastPosition = 0;
+        for (int i = 0; i < count; i++)
+        {
+            taskEvent.setType(BufferUtil.wrapString("task-type" + i));
+
+            headers
+                .setWorkflowDefinitionVersion(i)
+                .setWorkflowKey(i + 1)
+                .setWorkflowInstanceKey(i + 2)
+                .setActivityInstanceKey(i + 3);
+
+            final long position = writer.metadataWriter(brokerEventMetadata)
+                .valueWriter(taskEvent)
+                .positionAsKey()
+                .tryWrite();
+
+            assert position > lastPosition;
+            lastPosition = position;
+        }
+        return lastPosition;
     }
 
     private class Processor implements StreamProcessor

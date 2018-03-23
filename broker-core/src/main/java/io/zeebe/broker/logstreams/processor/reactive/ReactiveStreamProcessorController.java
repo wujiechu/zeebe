@@ -69,7 +69,7 @@ public class ReactiveStreamProcessorController extends Actor
     private final BrokerEventMetadata brokerEventMetadata;
 
 
-    private final EnumMap<EventType, ReusableObjectList<? extends UnpackedObject>> eventPools;
+    private final EnumMap<EventType, ReusableObjectList<UnpackedObject>> eventPools;
     private final ReusableObjectList<EventRef> eventWindow;
     private final EnumMap<EventType, List<StreamProcessorController>> typedControllers;
 
@@ -112,6 +112,7 @@ public class ReactiveStreamProcessorController extends Actor
         {
             LOG.debug("Release event ref {} and trigger new processing.", eventRef);
 
+            eventPools.get(eventRef.getType()).remove(eventRef.getEvent());
             eventWindow.remove(eventRef);
             actor.submit(this::processEvent);
         });
@@ -194,13 +195,11 @@ public class ReactiveStreamProcessorController extends Actor
                     final UnpackedObject event = eventPool.add();
                     next.readValue(event);
 
-
                     final EventRef eventRef = eventWindow.add();
                     eventRef.setEvent(event);
                     eventRef.setType(eventType);
                     eventRef.setRefCount(streamProcessorControllers.size());
                     eventRef.setPosition(next.getPosition());
-
 
                     LOG.debug("Distribute unpacked event to {} registered controller", streamProcessorControllers.size());
                     streamProcessorControllers.forEach((s) -> s.hintEvent(eventRef));
@@ -209,7 +208,8 @@ public class ReactiveStreamProcessorController extends Actor
                 }
                 else
                 {
-                    LOG.debug("Event pool for event of type {} is exhausted.", eventType);
+                    // TODO we need to step back - so we read this event next time again
+                    LOG.debug("Event pool for event of type {} is exhausted, size is {}", eventType, eventPool.size());
                 }
             }
             else
