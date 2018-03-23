@@ -26,6 +26,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
@@ -183,26 +184,17 @@ public class TestStreams
 
     public StreamProcessorControl runStreamProcessor(String log, StreamProcessor streamProcessor)
     {
-        return runStreamProcessor(log, 0, streamProcessor);
+        return runStreamProcessor(log, 0, () -> streamProcessor);
     }
 
-    public StreamProcessorControl runStreamProcessor(String log, int streamProcessorId, StreamProcessor streamProcessor)
+    public StreamProcessorControl runStreamProcessor(String log, int streamProcessorId, Supplier<StreamProcessor> factory)
     {
         final LogStream stream = getLogStream(log);
 
-        final SuspendableStreamProcessor processor = new SuspendableStreamProcessor(streamProcessor);
-
-        // stream processor names need to be unique for snapshots to work properly
-        // using the class name assumes that one stream processor class is not instantiated more than once in a test
-        final String name = streamProcessor.getClass().getSimpleName();
-
-        final StreamProcessorController streamProcessorController = LogStreams.createStreamProcessor(name, streamProcessorId, processor)
-            .logStream(stream)
-            .snapshotStorage(getSnapshotStorage())
-            .actorScheduler(actorScheduler)
-            .build();
-
-        final StreamProcessorControlImpl control = new StreamProcessorControlImpl(processor, streamProcessorController);
+        final StreamProcessorControlImpl control = new StreamProcessorControlImpl(
+                stream,
+                factory,
+                streamProcessorId);
 
         closeables.manage(control);
 
@@ -214,48 +206,56 @@ public class TestStreams
     protected class StreamProcessorControlImpl implements StreamProcessorControl, AutoCloseable
     {
 
-        protected final SuspendableStreamProcessor streamProcessor;
-        protected final StreamProcessorController controller;
+        private final Supplier<StreamProcessor> factory;
+        private final int streamProcessorId;
+        private final LogStream stream;
 
-        public StreamProcessorControlImpl(SuspendableStreamProcessor streamProcessor, StreamProcessorController controller)
+
+        protected SuspendableStreamProcessor currentStreamProcessor;
+        protected StreamProcessorController currentController;
+
+        public StreamProcessorControlImpl(
+                LogStream stream,
+                Supplier<StreamProcessor> factory,
+                int streamProcessorId)
         {
-            this.streamProcessor = streamProcessor;
-            this.controller = controller;
+            this.stream = stream;
+            this.factory = factory;
+            this.streamProcessorId = streamProcessorId;
         }
 
         @Override
         public void purgeSnapshot()
         {
-            snapshotStorage.purgeSnapshot(controller.getName());
+            snapshotStorage.purgeSnapshot(currentController.getName());
         }
-
 
         @Override
         public void unblock()
         {
-            streamProcessor.resume();
+            currentStreamProcessor.resume();
         }
 
         @Override
         public boolean isBlocked()
         {
-            return controller.isSuspended();
+            return currentController.isSuspended();
         }
 
         @Override
         public void blockAfterEvent(Predicate<LoggedEvent> test)
         {
-            streamProcessor.blockAfterEvent(test);
+            currentStreamProcessor.blockAfterEvent(test);
         }
 
         @Override
         public void close()
         {
-            if (controller.isOpened())
+            if (currentController != null && currentController.isOpened())
             {
                 try
                 {
-                    controller.closeAsync().get();
+                    currentController.closeAsync().get();
                 }
                 catch (InterruptedException | ExecutionException e)
                 {
@@ -267,14 +267,39 @@ public class TestStreams
         @Override
         public void start()
         {
+            buildStreamProcessor();
+
             try
             {
-                controller.openAsync().get();
+                currentController.openAsync().get();
             }
             catch (InterruptedException | ExecutionException e)
             {
                 throw new RuntimeException(e);
             }
+        }
+
+        @Override
+        public void restart()
+        {
+            close();
+            start();
+        }
+
+        private void buildStreamProcessor()
+        {
+            final StreamProcessor processor = factory.get();
+            currentStreamProcessor = new SuspendableStreamProcessor(processor);
+
+            // stream processor names need to be unique for snapshots to work properly
+            // using the class name assumes that one stream processor class is not instantiated more than once in a test
+            final String name = processor.getClass().getSimpleName();
+
+            currentController = LogStreams.createStreamProcessor(name, streamProcessorId, currentStreamProcessor)
+                .logStream(stream)
+                .snapshotStorage(getSnapshotStorage())
+                .actorScheduler(actorScheduler)
+                .build();
         }
     }
 

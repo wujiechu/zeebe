@@ -39,4 +39,6 @@ public interface StreamProcessorControl
     void close();
 
     void start();
+
+    void restart();
 }
