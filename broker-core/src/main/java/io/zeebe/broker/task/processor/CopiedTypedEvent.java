@@ -11,11 +11,13 @@ public class CopiedTypedEvent extends TypedEventImpl
 {
     private final long key;
     private final long position;
+    private final long sourcePosition;
 
     CopiedTypedEvent(LoggedEvent event, UnpackedObject object)
     {
         this.value = object;
         this.position = event.getPosition();
+        this.sourcePosition = event.getSourceEventPosition();
         this.key = event.getKey();
     }
 
@@ -23,6 +25,12 @@ public class CopiedTypedEvent extends TypedEventImpl
     public long getKey()
     {
         return key;
+    }
+
+    @Override
+    public long getSourcePosition()
+    {
+        return sourcePosition;
     }
 
     @Override

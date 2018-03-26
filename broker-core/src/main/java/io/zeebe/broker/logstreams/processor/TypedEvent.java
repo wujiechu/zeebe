@@ -24,6 +24,8 @@ public interface TypedEvent<T extends UnpackedObject>
 {
     long getPosition();
 
+    long getSourcePosition();
+
     long getKey();
 
     BrokerEventMetadata getMetadata();
