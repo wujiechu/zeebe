@@ -18,20 +18,25 @@
 package io.zeebe.broker.task.processor;
 
 import static io.zeebe.test.util.TestUtil.doRepeatedly;
+import static io.zeebe.test.util.TestUtil.waitUntil;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.RuleChain;
 
+import io.zeebe.broker.task.TaskQueueManagerService;
 import io.zeebe.broker.test.EmbeddedBrokerRule;
 import io.zeebe.test.broker.protocol.clientapi.ClientApiRule;
 import io.zeebe.test.broker.protocol.clientapi.ExecuteCommandResponse;
 import io.zeebe.test.broker.protocol.clientapi.SubscribedEvent;
+import io.zeebe.test.broker.protocol.clientapi.TestTopicClient;
 
 public class TaskLockExpirationTest
 {
@@ -125,15 +130,90 @@ public class TaskLockExpirationTest
         apiRule.openTaskSubscription(apiRule.getDefaultPartitionId(), taskType, lockTime.toMillis()).await();
         final SubscribedEvent lockedTask = apiRule.subscribedEvents().findFirst().get(); // => task is locked
 
-        failTask(lockedTask);
+        final Map<String, Object> event = new HashMap<>(lockedTask.event());
+        event.put("retries", 0);
+        failTask(lockedTask.key(), event);
 
         // when
         brokerRule.getClock().addTime(lockTime.plus(Duration.ofSeconds(1)));
 
         // then
-        // TODO: das event kommt wieder, weil es neu gelockt wird; vll sollte man das doch via TopicSubscription
-        //  asserten, mit LOCK_EXPIRED
         assertNoMoreTaskReceived();
+    }
+
+    @Test
+    public void shouldExpireLockedTask()
+    {
+        // given
+        final String taskType = "foo";
+        final long taskKey1 = createTask(taskType);
+
+        final long lockTime = 1000L;
+
+        apiRule.openTaskSubscription(
+            apiRule.getDefaultPartitionId(),
+            taskType,
+            lockTime);
+
+        waitUntil(() -> apiRule.numSubscribedEventsAvailable() == 1);
+        apiRule.moveMessageStreamToTail();
+
+        // when expired
+        doRepeatedly(() ->
+        {
+            brokerRule.getClock().addTime(TaskQueueManagerService.LOCK_EXPIRATION_INTERVAL);
+        }).until(v -> apiRule.numSubscribedEventsAvailable() == 1);
+
+
+        // then locked again
+        final List<SubscribedEvent> events = apiRule.topic()
+                                                     .receiveEvents(TestTopicClient.taskEvents())
+                                                     .limit(8)
+                                                     .collect(Collectors.toList());
+
+        assertThat(events).extracting(e -> e.key()).contains(taskKey1);
+        assertThat(events).extracting(e -> e.event().get("state"))
+                          .containsExactly("CREATE", "CREATED", "LOCK", "LOCKED", "EXPIRE_LOCK", "LOCK_EXPIRED", "LOCK", "LOCKED");
+    }
+
+    @Test
+    public void shouldExpireMultipleLockedTasksAtOnce()
+    {
+        // given
+        final String taskType = "foo";
+        final long taskKey1 = createTask(taskType);
+        final long taskKey2 = createTask(taskType);
+
+        final long lockTime = 1000L;
+
+        apiRule.openTaskSubscription(
+                apiRule.getDefaultPartitionId(),
+                taskType,
+                lockTime);
+
+        waitUntil(() -> apiRule.numSubscribedEventsAvailable() == 2); // both tasks locked
+        apiRule.moveMessageStreamToTail();
+
+        // when
+        doRepeatedly(() ->
+        {
+            brokerRule.getClock().addTime(TaskQueueManagerService.LOCK_EXPIRATION_INTERVAL);
+        }).until(v -> apiRule.numSubscribedEventsAvailable() == 2);
+
+        // then
+        final List<SubscribedEvent> expiredEvents = apiRule.topic()
+                                                    .receiveEvents(TestTopicClient.taskEvents())
+                                                    .limit(16)
+                                                    .collect(Collectors.toList());
+
+        assertThat(expiredEvents)
+            .filteredOn(e -> e.event().get("state").equals("LOCKED"))
+            .hasSize(4)
+            .extracting(e -> e.key()).containsExactly(taskKey1, taskKey2, taskKey1, taskKey2);
+
+        assertThat(expiredEvents)
+            .filteredOn(e -> e.event().get("state").equals("LOCK_EXPIRED"))
+            .extracting(e -> e.key()).containsExactlyInAnyOrder(taskKey1, taskKey2);
     }
 
     private long createTask(String type)
@@ -162,13 +242,13 @@ public class TaskLockExpirationTest
             .sendAndAwait();
     }
 
-    private void failTask(SubscribedEvent lockedTask)
+    private void failTask(long key, Map<String, Object> event)
     {
         apiRule.createCmdRequest()
             .eventTypeTask()
-            .key(lockedTask.key())
+            .key(key)
             .command()
-                .putAll(lockedTask.event())
+                .putAll(event)
                 .put("state", "FAIL")
                 .done()
             .sendAndAwait();

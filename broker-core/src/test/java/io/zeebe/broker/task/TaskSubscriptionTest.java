@@ -20,7 +20,6 @@ package io.zeebe.broker.task;
 import static io.zeebe.test.broker.protocol.clientapi.TestTopicClient.taskEvents;
 import static io.zeebe.test.util.TestUtil.waitUntil;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.net.StandardSocketOptions;
@@ -29,13 +28,20 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import io.zeebe.broker.test.EmbeddedBrokerRule;
-import io.zeebe.protocol.clientapi.*;
-import io.zeebe.test.broker.protocol.clientapi.*;
-import io.zeebe.transport.SocketAddress;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.RuleChain;
+
+import io.zeebe.broker.test.EmbeddedBrokerRule;
+import io.zeebe.protocol.clientapi.ControlMessageType;
+import io.zeebe.protocol.clientapi.ErrorCode;
+import io.zeebe.protocol.clientapi.SubscriptionType;
+import io.zeebe.test.broker.protocol.clientapi.ClientApiRule;
+import io.zeebe.test.broker.protocol.clientapi.ControlMessageResponse;
+import io.zeebe.test.broker.protocol.clientapi.ErrorResponse;
+import io.zeebe.test.broker.protocol.clientapi.ExecuteCommandResponse;
+import io.zeebe.test.broker.protocol.clientapi.SubscribedEvent;
+import io.zeebe.transport.SocketAddress;
 
 
 public class TaskSubscriptionTest
@@ -306,19 +312,6 @@ public class TaskSubscriptionTest
         // then
         waitUntil(() -> apiRule.numSubscribedEventsAvailable() == 4);
     }
-
-    @Test
-    public void shouldPublishFailedTaskAgain()
-    {
-        fail("implement");
-    }
-
-    @Test
-    public void shouldPublishExpiredTaskAgain()
-    {
-        fail("implement");
-    }
-
 
     private ExecuteCommandResponse createTask(String type)
     {

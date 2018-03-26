@@ -45,7 +45,7 @@ public class TaskInstanceStreamProcessorTest
     @Test
     public void todo()
     {
-        fail("Plenty of buffers are not released; see logs");
+        fail("some tests take ~10 seconds because a future does not resolve on broker shutdown");
     }
 
     @Test
