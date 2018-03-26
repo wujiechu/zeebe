@@ -2,6 +2,7 @@ package io.zeebe.broker.task.processor;
 
 import java.util.stream.Stream;
 
+import io.zeebe.broker.incident.data.IncidentEvent;
 import io.zeebe.broker.system.log.PartitionEvent;
 import io.zeebe.broker.system.log.TopicEvent;
 import io.zeebe.broker.task.data.TaskEvent;
@@ -22,6 +23,13 @@ public class TypedEventStream extends StreamWrapper<LoggedEvent>
         return new TaskEventStream(
             filter(Events::isTaskEvent)
             .map(e -> CopiedTypedEvent.toTypedEvent(e, TaskEvent.class)));
+    }
+
+    public IncidentEventStream onlyIncidentEvents()
+    {
+        return new IncidentEventStream(
+            filter(Events::isIncidentEvent)
+            .map(e -> CopiedTypedEvent.toTypedEvent(e, IncidentEvent.class)));
     }
 
 

@@ -359,7 +359,6 @@ public class IncidentStreamProcessor
             isResolved = false;
             incidentEvent = null;
 
-            // TODO: das hier war vorher position-basiert (also der key der map war die position des workflowinstanceEvents bzw. hier die source-position)
             final long incidentKey = resolvingEvents.get(event.getSourcePosition(), -1);
             if (incidentKey > 0)
             {
@@ -508,6 +507,7 @@ public class IncidentStreamProcessor
 
         private boolean isResolved;
         private TypedEvent<IncidentEvent> persistedIncident;
+        private boolean isTransientIncident;
 
         TaskIncidentResolvedProcessor(TypedStreamReader reader)
         {
@@ -518,6 +518,7 @@ public class IncidentStreamProcessor
         public void processEvent(TypedEvent<TaskEvent> event)
         {
             isResolved = false;
+            isTransientIncident = false;
 
             final long incidentKey = failedTaskMap.get(event.getKey(), -1L);
             persistedIncident = null;
@@ -539,6 +540,10 @@ public class IncidentStreamProcessor
                     throw new IllegalStateException("inconsistent incident map");
                 }
             }
+            else if (incidentKey == NON_PERSISTENT_INCIDENT)
+            {
+                isTransientIncident = true;
+            }
         }
 
         @Override
@@ -552,7 +557,7 @@ public class IncidentStreamProcessor
         @Override
         public void updateState(TypedEvent<TaskEvent> event)
         {
-            if (isResolved)
+            if (isResolved || isTransientIncident)
             {
                 failedTaskMap.remove(event.getKey(), -1L);
             }
