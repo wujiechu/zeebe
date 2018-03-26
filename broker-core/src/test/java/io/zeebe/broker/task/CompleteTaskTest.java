@@ -1,47 +1,174 @@
 package io.zeebe.broker.task;
 
-import static org.junit.Assert.fail;
+import static io.zeebe.test.util.TestUtil.waitUntil;
+import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.RuleChain;
+
+import io.zeebe.broker.test.EmbeddedBrokerRule;
+import io.zeebe.protocol.clientapi.ControlMessageType;
+import io.zeebe.test.broker.protocol.clientapi.ClientApiRule;
+import io.zeebe.test.broker.protocol.clientapi.ExecuteCommandResponse;
+import io.zeebe.test.broker.protocol.clientapi.SubscribedEvent;
 
 public class CompleteTaskTest
 {
+    private static final String TASK_TYPE = "foo";
+
+    public EmbeddedBrokerRule brokerRule = new EmbeddedBrokerRule();
+    public ClientApiRule apiRule = new ClientApiRule();
+
+    @Rule
+    public RuleChain ruleChain = RuleChain.outerRule(brokerRule).around(apiRule);
 
     @Test
     public void shouldCompleteTask()
     {
-        fail("implement");
+        // given
+        createTask(TASK_TYPE);
+
+        apiRule.openTaskSubscription(TASK_TYPE).await();
+
+        final SubscribedEvent subscribedEvent = receiveSingleSubscribedEvent();
+
+        // when
+        final ExecuteCommandResponse response = completeTask(subscribedEvent.key(), subscribedEvent.event());
+
+        // then
+        assertThat(response.getEvent()).containsEntry("state", "COMPLETED");
     }
 
     @Test
     public void shouldRejectCompletionIfTaskNotFound()
     {
-        fail("implement");
+        // given
+        final int key = 123;
 
+        final Map<String, Object> event = new HashMap<>();
+        event.put("type", "foo");
+
+        // when
+        final ExecuteCommandResponse response = completeTask(key, event);
+
+        // then
+        assertThat(response.getEvent()).containsEntry("state", "COMPLETE_REJECTED");
     }
 
     @Test
     public void shouldRejectCompletionIfPayloadIsInvalid()
     {
-        fail("implement");
+        // given
+        createTask(TASK_TYPE);
+
+        apiRule.openTaskSubscription(TASK_TYPE).await();
+
+        final SubscribedEvent subscribedEvent = receiveSingleSubscribedEvent();
+
+        final Map<String, Object> event = subscribedEvent.event();
+        event.put("payload", new byte[] {1}); // positive fixnum, i.e. no object
+
+        // when
+        final ExecuteCommandResponse response = completeTask(subscribedEvent.key(), event);
+
+        // then
+        assertThat(response.getEvent()).containsEntry("state", "COMPLETE_REJECTED");
     }
 
     @Test
     public void shouldRejectCompletionIfTaskIsCompleted()
     {
-        fail("implement");
+        // given
+        createTask(TASK_TYPE);
+
+        apiRule.openTaskSubscription(TASK_TYPE).await();
+
+        final SubscribedEvent subscribedEvent = receiveSingleSubscribedEvent();
+        completeTask(subscribedEvent.key(), subscribedEvent.event());
+
+        // when
+        final ExecuteCommandResponse response = completeTask(subscribedEvent.key(), subscribedEvent.event());
+
+        // then
+        assertThat(response.getEvent()).containsEntry("state", "COMPLETE_REJECTED");
     }
 
     @Test
     public void shouldRejectCompletionIfTaskNotLocked()
     {
-        fail("implement");
-    }
+        // given
+        final ExecuteCommandResponse task = createTask(TASK_TYPE);
 
+        // when
+        final ExecuteCommandResponse response = completeTask(task.key(), task.getEvent());
+
+        // then
+        assertThat(response.getEvent()).containsEntry("state", "COMPLETE_REJECTED");
+    }
 
     @Test
     public void shouldRejectCompletionIfNotLockOwner()
     {
-        fail("implement");
+        // given
+        final String lockOwner = "kermit";
+
+        createTask(TASK_TYPE);
+
+        apiRule.createControlMessageRequest()
+            .partitionId(apiRule.getDefaultPartitionId())
+            .messageType(ControlMessageType.ADD_TASK_SUBSCRIPTION)
+            .data()
+                .put("taskType", TASK_TYPE)
+                .put("lockDuration", Duration.ofSeconds(30).toMillis())
+                .put("lockOwner", lockOwner)
+                .put("credits", 10)
+                .done()
+            .sendAndAwait();
+
+        final SubscribedEvent subscribedEvent = receiveSingleSubscribedEvent();
+        final Map<String, Object> event = subscribedEvent.event();
+        event.put("lockOwner", "ms piggy");
+
+        // when
+        final ExecuteCommandResponse response = completeTask(subscribedEvent.key(), event);
+
+        // then
+        assertThat(response.getEvent()).containsEntry("state", "COMPLETE_REJECTED");
+    }
+
+
+    private ExecuteCommandResponse createTask(String type)
+    {
+        return apiRule.createCmdRequest()
+            .eventTypeTask()
+            .command()
+                .put("state", "CREATE")
+                .put("type", type)
+                .put("retries", 3)
+            .done()
+            .sendAndAwait();
+    }
+
+    private ExecuteCommandResponse completeTask(long key, Map<String, Object> event)
+    {
+        return apiRule.createCmdRequest()
+            .eventTypeTask()
+            .key(key)
+            .command()
+                .putAll(event)
+                .put("state", "COMPLETE")
+            .done()
+            .sendAndAwait();
+    }
+
+    private SubscribedEvent receiveSingleSubscribedEvent()
+    {
+        waitUntil(() -> apiRule.numSubscribedEventsAvailable() == 1);
+        return apiRule.subscribedEvents().findFirst().get();
     }
 }

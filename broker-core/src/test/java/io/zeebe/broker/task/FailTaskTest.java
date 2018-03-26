@@ -4,6 +4,7 @@ import static io.zeebe.test.util.TestUtil.waitUntil;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 
 import org.junit.Rule;
@@ -56,15 +57,11 @@ public class FailTaskTest
         // given
         final int key = 123;
 
+        final Map<String, Object> event = new HashMap<>();
+        event.put("type", "foo");
+
         // when
-        final ExecuteCommandResponse response = apiRule.createCmdRequest()
-            .eventTypeTask()
-            .key(key)
-            .command()
-                .put("state", "FAIL")
-                .put("type", "foo")
-            .done()
-            .sendAndAwait();
+        final ExecuteCommandResponse response = failTask(key, event);
 
         // then
         assertThat(response.getEvent()).containsEntry("state", "FAIL_REJECTED");
@@ -158,13 +155,13 @@ public class FailTaskTest
     private ExecuteCommandResponse createTask(String type)
     {
         return apiRule.createCmdRequest()
-                .eventTypeTask()
-                .command()
-                    .put("state", "CREATE")
-                    .put("type", type)
-                    .put("retries", 3)
-                .done()
-                .sendAndAwait();
+            .eventTypeTask()
+            .command()
+                .put("state", "CREATE")
+                .put("type", type)
+                .put("retries", 3)
+            .done()
+            .sendAndAwait();
     }
 
     private ExecuteCommandResponse failTask(long key, Map<String, Object> event)
