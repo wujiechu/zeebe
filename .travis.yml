@@ -1,6 +1,2 @@
-# we don't need sudo but we want a vm with more memory instead of a container
-dist: trusty
-sudo: required
-
 language: java
 jdk: oraclejdk8
