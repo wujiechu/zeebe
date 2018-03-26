@@ -41,7 +41,10 @@ public class CompleteTaskTest
         final ExecuteCommandResponse response = completeTask(subscribedEvent.key(), subscribedEvent.event());
 
         // then
-        assertThat(response.getEvent()).containsEntry("state", "COMPLETED");
+        final Map<String, Object> expectedEvent = new HashMap<>(subscribedEvent.event());
+        expectedEvent.put("state", "COMPLETED");
+
+        assertThat(response.getEvent()).containsAllEntriesOf(expectedEvent);
     }
 
     @Test

@@ -295,6 +295,132 @@ public class TaskInstanceStreamProcessorTest
                     TaskState.LOCK_EXPIRATION_REJECTED);
     }
 
+    @Test
+    public void shouldCancelCreatedTask()
+    {
+        // given
+        final long key = 1;
+        rule.runStreamProcessor(this::buildStreamProcessor);
+
+        rule.writeEvent(key, create());
+        waitForEventInState(TaskState.CREATED);
+
+        // when
+        rule.writeEvent(key, cancel());
+
+        // then
+        waitForEventInState(TaskState.CANCELED);
+
+        final List<TypedEvent<TaskEvent>> taskEvents = rule.events().onlyTaskEvents().collect(Collectors.toList());
+        assertThat(taskEvents).extracting("value.state")
+            .containsExactly(
+                TaskState.CREATE,
+                TaskState.CREATED,
+                TaskState.CANCEL,
+                TaskState.CANCELED);
+    }
+
+    @Test
+    public void shouldCancelLockedTask()
+    {
+        // given
+        final long key = 1;
+        rule.runStreamProcessor(this::buildStreamProcessor);
+
+        rule.writeEvent(key, create());
+        waitForEventInState(TaskState.CREATED);
+
+        rule.writeEvent(key, lock(Instant.now().plusSeconds(30)));
+        waitForEventInState(TaskState.LOCKED);
+
+        // when
+        rule.writeEvent(key, cancel());
+
+        // then
+        waitForEventInState(TaskState.CANCELED);
+
+        final List<TypedEvent<TaskEvent>> taskEvents = rule.events().onlyTaskEvents().collect(Collectors.toList());
+        assertThat(taskEvents).extracting("value.state")
+            .containsExactly(
+                TaskState.CREATE,
+                TaskState.CREATED,
+                TaskState.LOCK,
+                TaskState.LOCKED,
+                TaskState.CANCEL,
+                TaskState.CANCELED);
+    }
+
+    @Test
+    public void shouldCancelFailedTask()
+    {
+        // given
+        final long key = 1;
+        rule.runStreamProcessor(this::buildStreamProcessor);
+
+        rule.writeEvent(key, create());
+        waitForEventInState(TaskState.CREATED);
+
+        rule.writeEvent(key, lock(Instant.now().plusSeconds(30)));
+        waitForEventInState(TaskState.LOCKED);
+
+        rule.writeEvent(key, failure());
+        waitForEventInState(TaskState.FAILED);
+
+        // when
+        rule.writeEvent(key, cancel());
+
+        // then
+        waitForEventInState(TaskState.CANCELED);
+
+        final List<TypedEvent<TaskEvent>> taskEvents = rule.events().onlyTaskEvents().collect(Collectors.toList());
+        assertThat(taskEvents).extracting("value.state")
+            .containsExactly(
+                TaskState.CREATE,
+                TaskState.CREATED,
+                TaskState.LOCK,
+                TaskState.LOCKED,
+                TaskState.FAIL,
+                TaskState.FAILED,
+                TaskState.CANCEL,
+                TaskState.CANCELED);
+    }
+
+
+    @Test
+    public void shouldRejectCancelIfTaskCompleted()
+    {
+        // given
+        final long key = 1;
+        rule.runStreamProcessor(this::buildStreamProcessor);
+
+        rule.writeEvent(key, create());
+        waitForEventInState(TaskState.CREATED);
+
+        rule.writeEvent(key, lock(Instant.now().plusSeconds(30)));
+        waitForEventInState(TaskState.LOCKED);
+
+        rule.writeEvent(key, complete());
+        waitForEventInState(TaskState.COMPLETED);
+
+        // when
+        rule.writeEvent(key, cancel());
+
+        // then
+        waitForEventInState(TaskState.CANCEL_REJECTED);
+
+        final List<TypedEvent<TaskEvent>> taskEvents = rule.events().onlyTaskEvents().collect(Collectors.toList());
+        assertThat(taskEvents).extracting("value.state")
+            .containsExactly(
+                TaskState.CREATE,
+                TaskState.CREATED,
+                TaskState.LOCK,
+                TaskState.LOCKED,
+                TaskState.COMPLETE,
+                TaskState.COMPLETED,
+                TaskState.CANCEL,
+                TaskState.CANCEL_REJECTED);
+    }
+
     private void waitForEventInState(TaskState state)
     {
         waitUntil(() -> rule.events().onlyTaskEvents().inState(state).findFirst().isPresent());
@@ -340,6 +466,16 @@ public class TaskInstanceStreamProcessorTest
         event.setState(TaskState.FAIL);
         event.setType(BufferUtil.wrapString("foo"));
         event.setLockOwner(BufferUtil.wrapString("bar"));
+
+        return event;
+    }
+
+    private TaskEvent cancel()
+    {
+        final TaskEvent event = new TaskEvent();
+
+        event.setState(TaskState.CANCEL);
+        event.setType(BufferUtil.wrapString("foo"));
 
         return event;
     }

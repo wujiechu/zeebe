@@ -43,7 +43,10 @@ public class FailTaskTest
         final ExecuteCommandResponse response = failTask(subscribedEvent.key(), subscribedEvent.event());
 
         // then
-        assertThat(response.getEvent()).containsEntry("state", "FAILED");
+        final Map<String, Object> expectedEvent = new HashMap<>(subscribedEvent.event());
+        expectedEvent.put("state", "FAILED");
+
+        assertThat(response.getEvent()).containsAllEntriesOf(expectedEvent);
 
         // and
         final SubscribedEvent republishedEvent = receiveSingleSubscribedEvent();
