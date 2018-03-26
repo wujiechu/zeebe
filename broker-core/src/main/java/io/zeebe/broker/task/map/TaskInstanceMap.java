@@ -122,6 +122,7 @@ public class TaskInstanceMap
 
     public TaskInstanceMap setState(short state)
     {
+        System.out.println("Setting task index state to " + state);
         ensureRead();
         buffer.putShort(STATE_OFFSET, state, BYTE_ORDER);
         return this;

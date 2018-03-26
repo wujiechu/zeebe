@@ -174,6 +174,43 @@ public class TaskInstanceStreamProcessorTest
                     TaskState.LOCK_EXPIRATION_REJECTED);
     }
 
+    @Test
+    public void foo()
+    {
+        // given
+        final long key = 1;
+        final StreamProcessorControl control = rule.runStreamProcessor(this::buildStreamProcessor);
+
+        rule.writeEvent(key, create());
+        waitForEventInState(TaskState.CREATED);
+
+        control.blockAfterTaskEvent(e -> e.getValue().getState() == TaskState.LOCKED);
+        rule.writeEvent(key, lock(nowPlus(Duration.ofSeconds(30))));
+        waitForEventInState(TaskState.LOCKED);
+
+        // when
+        rule.writeEvent(key, failure());
+        rule.writeEvent(key, failure());
+        control.unblock();
+
+        // then
+        waitForEventInState(TaskState.FAIL_REJECTED);
+
+        final List<TypedEvent<TaskEvent>> taskEvents = rule.events().onlyTaskEvents().collect(Collectors.toList());
+        assertThat(taskEvents).extracting("value.state")
+            .containsExactly(
+                    TaskState.CREATE,
+                    TaskState.CREATED,
+                    TaskState.LOCK,
+                    TaskState.LOCKED,
+                    TaskState.FAIL,
+                    TaskState.FAIL,
+                    TaskState.FAILED,
+                    TaskState.FAIL_REJECTED);
+
+        fail("DELETE ME");
+    }
+
     private Instant nowPlus(Duration duration)
     {
         return rule.getClock().getCurrentTime().plus(duration);

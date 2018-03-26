@@ -212,6 +212,7 @@ public class TestStreams
 
         protected SuspendableStreamProcessor currentStreamProcessor;
         protected StreamProcessorController currentController;
+        private Consumer<SnapshotStorage> snapshotCleaner;
 
         public StreamProcessorControlImpl(
                 LogStream stream,
@@ -226,7 +227,7 @@ public class TestStreams
         @Override
         public void purgeSnapshot()
         {
-            snapshotStorage.purgeSnapshot(currentController.getName());
+            snapshotCleaner.accept(snapshotStorage);
         }
 
         @Override
@@ -244,6 +245,7 @@ public class TestStreams
         @Override
         public void blockAfterEvent(Predicate<LoggedEvent> test)
         {
+            ensureStreamProcessorBuilt();
             currentStreamProcessor.blockAfterEvent(test);
         }
 
@@ -285,12 +287,17 @@ public class TestStreams
                     throw new RuntimeException(e);
                 }
             }
+
+            currentController = null;
+            currentStreamProcessor = null;
         }
 
         @Override
         public void start()
         {
-            buildStreamProcessor();
+            currentController = buildStreamProcessorController();
+            final String controllerName = currentController.getName();
+            snapshotCleaner = storage -> storage.purgeSnapshot(controllerName);
 
             try
             {
@@ -309,16 +316,24 @@ public class TestStreams
             start();
         }
 
-        private void buildStreamProcessor()
+        private void ensureStreamProcessorBuilt()
         {
-            final StreamProcessor processor = factory.get();
-            currentStreamProcessor = new SuspendableStreamProcessor(processor);
+            if (currentStreamProcessor == null)
+            {
+                final StreamProcessor processor = factory.get();
+                currentStreamProcessor = new SuspendableStreamProcessor(processor);
+            }
+        }
+
+        private StreamProcessorController buildStreamProcessorController()
+        {
+            ensureStreamProcessorBuilt();
 
             // stream processor names need to be unique for snapshots to work properly
             // using the class name assumes that one stream processor class is not instantiated more than once in a test
-            final String name = processor.getClass().getSimpleName();
+            final String name = currentStreamProcessor.wrappedProcessor.getClass().getSimpleName();
 
-            currentController = LogStreams.createStreamProcessor(name, streamProcessorId, currentStreamProcessor)
+            return LogStreams.createStreamProcessor(name, streamProcessorId, currentStreamProcessor)
                 .logStream(stream)
                 .snapshotStorage(getSnapshotStorage())
                 .actorScheduler(actorScheduler)

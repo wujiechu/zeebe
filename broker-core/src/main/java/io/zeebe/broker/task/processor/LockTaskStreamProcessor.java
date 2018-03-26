@@ -121,6 +121,7 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
         ensureGreaterThan("lock duration", subscription.getLockDuration(), 0);
         ensureGreaterThan("subscription credits", subscription.getCredits(), 0);
 
+
         if (!BufferUtil.equals(subscription.getLockTaskType(), subscribedTaskType))
         {
             final String errorMessage = String.format("Subscription task type is not equal to '%s'.", BufferUtil.bufferAsString(subscribedTaskType));
@@ -130,6 +131,7 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
         return actor.call(() ->
         {
             subscriptions.addSubscription(subscription);
+            System.out.println("Adding subscription with key " + subscription.getSubscriberKey());
 
             context.resumeController();
         });
@@ -139,6 +141,7 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
     {
         return actor.call(() ->
         {
+            System.out.println("Removing subscription with key " + subscriberKey);
             subscriptions.removeSubscription(subscriberKey);
             final boolean isSuspended = subscriptions.isEmpty();
             if (isSuspended)
@@ -280,6 +283,8 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
             if (lockSubscription != null)
             {
                 final long lockTimeout = ActorClock.currentTimeMillis() + lockSubscription.getLockDuration();
+
+                System.out.println("Locking task for subscriber " + lockSubscription.getSubscriberKey());
 
                 taskEvent
                     .setState(TaskState.LOCK)

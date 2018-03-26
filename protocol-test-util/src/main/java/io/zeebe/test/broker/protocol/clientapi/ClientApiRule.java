@@ -208,6 +208,16 @@ public class ClientApiRule extends ExternalResource
         return openTaskSubscription(defaultPartitionId, type, DEFAULT_LOCK_DURATION);
     }
 
+    public ControlMessageRequest closeTaskSubscription(long subscriberKey)
+    {
+        return createControlMessageRequest()
+                    .messageType(ControlMessageType.REMOVE_TASK_SUBSCRIPTION)
+                    .data()
+                        .put("subscriberKey", subscriberKey)
+                    .done()
+                .send();
+    }
+
     public ControlMessageRequest openTaskSubscription(
             final int partitionId,
             final String type,
