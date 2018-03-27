@@ -142,6 +142,18 @@ public class TestTopicClient
         return response.key();
     }
 
+    public ExecuteCommandResponse createTask(String type)
+    {
+        return apiRule.createCmdRequest()
+                .eventTypeTask()
+                .command()
+                    .put("state", "CREATE")
+                    .put("type", type)
+                    .put("retries", 3)
+                .done()
+                .sendAndAwait();
+    }
+
     public void completeTaskOfType(String taskType)
     {
         completeTaskOfType(taskType, (byte[]) null);
@@ -191,6 +203,18 @@ public class TestTopicClient
         final ExecuteCommandResponse response = mapBuilder.done().sendAndAwait();
 
         assertThat(response.getEvent().get(PROP_STATE)).isEqualTo("COMPLETED");
+    }
+
+    public ExecuteCommandResponse failTask(long key, Map<String, Object> event)
+    {
+        return apiRule.createCmdRequest()
+            .eventTypeTask()
+            .key(key)
+            .command()
+                .putAll(event)
+                .put("state", "FAIL")
+            .done()
+            .sendAndAwait();
     }
 
     /**

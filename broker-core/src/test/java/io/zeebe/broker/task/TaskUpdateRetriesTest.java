@@ -1,16 +1,21 @@
 package io.zeebe.broker.task;
 
+import static io.zeebe.test.util.TestUtil.doRepeatedly;
 import static io.zeebe.test.util.TestUtil.waitUntil;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.RuleChain;
 
 import io.zeebe.broker.test.EmbeddedBrokerRule;
+import io.zeebe.protocol.clientapi.EventType;
+import io.zeebe.protocol.clientapi.SubscriptionType;
 import io.zeebe.test.broker.protocol.clientapi.ClientApiRule;
 import io.zeebe.test.broker.protocol.clientapi.ExecuteCommandResponse;
 import io.zeebe.test.broker.protocol.clientapi.SubscribedEvent;
@@ -52,10 +57,37 @@ public class TaskUpdateRetriesTest
 
         assertThat(response.getEvent()).containsAllEntriesOf(expectedEvent);
 
-        // and
+        // and the task is published again
         final SubscribedEvent republishedEvent = receiveSingleSubscribedEvent();
         assertThat(republishedEvent.key()).isEqualTo(subscribedEvent.key());
         assertThat(republishedEvent.position()).isNotEqualTo(subscribedEvent.position());
+
+        // and the task lifecycle is correct
+        apiRule.openTopicSubscription("foo", 0).await();
+
+        final int expectedTopicEvents = 10;
+
+        final List<SubscribedEvent> taskEvents = doRepeatedly(() -> apiRule
+                .moveMessageStreamToHead()
+                .subscribedEvents()
+                .filter(e -> e.subscriptionType() == SubscriptionType.TOPIC_SUBSCRIPTION &&
+                      e.eventType() == EventType.TASK_EVENT)
+                .limit(expectedTopicEvents)
+                .collect(Collectors.toList()))
+            .until(e -> e.size() == expectedTopicEvents);
+
+        assertThat(taskEvents).extracting(e -> e.event().get("state"))
+            .containsExactly(
+                    "CREATE",
+                    "CREATED",
+                    "LOCK",
+                    "LOCKED",
+                    "FAIL",
+                    "FAILED",
+                    "UPDATE_RETRIES",
+                    "RETRIES_UPDATED",
+                    "LOCK",
+                    "LOCKED");
     }
 
     @Test

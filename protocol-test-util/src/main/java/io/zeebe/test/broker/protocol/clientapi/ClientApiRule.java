@@ -45,7 +45,7 @@ import org.junit.rules.ExternalResource;
 public class ClientApiRule extends ExternalResource
 {
     public static final String DEFAULT_TOPIC_NAME = "default-topic";
-    public static final long DEFAULT_LOCK_DURATION = 1000L;
+    public static final long DEFAULT_LOCK_DURATION = 10000L;
 
     protected ClientTransport transport;
     protected Dispatcher sendBuffer;
@@ -221,18 +221,27 @@ public class ClientApiRule extends ExternalResource
     public ControlMessageRequest openTaskSubscription(
             final int partitionId,
             final String type,
-            long lockDuration)
+            long lockDuration,
+            int credits)
     {
         return createControlMessageRequest()
-            .messageType(ControlMessageType.ADD_TASK_SUBSCRIPTION)
-            .partitionId(partitionId)
-            .data()
-                .put("taskType", type)
-                .put("lockDuration", lockDuration)
-                .put("lockOwner", "test")
-                .put("credits", 10)
-                .done()
-            .send();
+                .messageType(ControlMessageType.ADD_TASK_SUBSCRIPTION)
+                .partitionId(partitionId)
+                .data()
+                    .put("taskType", type)
+                    .put("lockDuration", lockDuration)
+                    .put("lockOwner", "test")
+                    .put("credits", credits)
+                    .done()
+                .send();
+    }
+
+    public ControlMessageRequest openTaskSubscription(
+            final int partitionId,
+            final String type,
+            long lockDuration)
+    {
+        return openTaskSubscription(partitionId, type, lockDuration, 10);
     }
 
     public Stream<RawMessage> incomingMessages()

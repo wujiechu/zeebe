@@ -33,6 +33,7 @@ import org.junit.rules.RuleChain;
 
 import io.zeebe.broker.task.TaskQueueManagerService;
 import io.zeebe.broker.test.EmbeddedBrokerRule;
+import io.zeebe.protocol.clientapi.SubscriptionType;
 import io.zeebe.test.broker.protocol.clientapi.ClientApiRule;
 import io.zeebe.test.broker.protocol.clientapi.ExecuteCommandResponse;
 import io.zeebe.test.broker.protocol.clientapi.SubscribedEvent;
@@ -47,7 +48,7 @@ public class TaskLockExpirationTest
     public RuleChain ruleChain = RuleChain.outerRule(brokerRule).around(apiRule);
 
     @Test
-    public void shouldExpireLock()
+    public void shouldExpireLock() throws InterruptedException
     {
         // given
         brokerRule.getClock().pinCurrentTime();
@@ -73,6 +74,29 @@ public class TaskLockExpirationTest
 
         assertThat(events.get(0).key()).isEqualTo(taskKey);
         assertThat(events.get(1).key()).isEqualTo(taskKey);
+
+        apiRule.openTopicSubscription("foo", 0).await();
+
+        final int expectedTopicEvents = 8;
+
+        final List<SubscribedEvent> taskEvents = doRepeatedly(() -> apiRule
+                .moveMessageStreamToHead()
+                .subscribedEvents()
+                .filter(e -> e.subscriptionType() == SubscriptionType.TOPIC_SUBSCRIPTION)
+                .limit(expectedTopicEvents)
+                .collect(Collectors.toList()))
+            .until(e -> e.size() == expectedTopicEvents);
+
+        assertThat(taskEvents).extracting(e -> e.event().get("state"))
+            .containsExactly(
+                    "CREATE",
+                    "CREATED",
+                    "LOCK",
+                    "LOCKED",
+                    "EXPIRE_LOCK",
+                    "LOCK_EXPIRED",
+                    "LOCK",
+                    "LOCKED");
     }
 
     @Test

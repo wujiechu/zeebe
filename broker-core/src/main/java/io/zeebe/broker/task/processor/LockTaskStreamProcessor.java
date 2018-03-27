@@ -40,6 +40,8 @@ import io.zeebe.util.buffer.BufferUtil;
 import io.zeebe.util.sched.ActorControl;
 import io.zeebe.util.sched.clock.ActorClock;
 import io.zeebe.util.sched.future.ActorFuture;
+import io.zeebe.util.sched.future.CompletableActorFuture;
+
 import org.agrona.DirectBuffer;
 
 import static io.zeebe.protocol.clientapi.EventType.TASK_EVENT;
@@ -113,14 +115,20 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
 
     public ActorFuture<Void> addSubscription(TaskSubscription subscription)
     {
-        ensureNotNull("subscription", subscription);
-        ensureNotNull("lock task type", subscription.getLockTaskType());
-        ensureNotNull("lock owner", subscription.getLockOwner());
-        ensureGreaterThan("length of lock owner", subscription.getLockOwner().capacity(), 0);
-        ensureLessThanOrEqual("length of lock owner", subscription.getLockOwner().capacity(), TaskSubscription.LOCK_OWNER_MAX_LENGTH);
-        ensureGreaterThan("lock duration", subscription.getLockDuration(), 0);
-        ensureGreaterThan("subscription credits", subscription.getCredits(), 0);
-
+        try
+        {
+            ensureNotNull("subscription", subscription);
+            ensureNotNullOrEmpty("lock task type", subscription.getLockTaskType());
+            ensureNotNullOrEmpty("lock owner", subscription.getLockOwner());
+            ensureGreaterThan("length of lock owner", subscription.getLockOwner().capacity(), 0);
+            ensureLessThanOrEqual("length of lock owner", subscription.getLockOwner().capacity(), TaskSubscription.LOCK_OWNER_MAX_LENGTH);
+            ensureGreaterThan("lock duration", subscription.getLockDuration(), 0);
+            ensureGreaterThan("subscription credits", subscription.getCredits(), 0);
+        }
+        catch (Exception e)
+        {
+            return CompletableActorFuture.completedExceptionally(e);
+        }
 
         if (!BufferUtil.equals(subscription.getLockTaskType(), subscribedTaskType))
         {
