@@ -59,6 +59,7 @@ public class TypedStreamProcessor implements StreamProcessor
     protected final TypedEventImpl typedEvent = new TypedEventImpl();
     protected DelegatingEventProcessor eventProcessorWrapper;
     protected ActorControl actor;
+    private StreamProcessorContext streamProcessorContext;
 
     public TypedStreamProcessor(
             SnapshotSupport snapshotSupport,
@@ -89,6 +90,7 @@ public class TypedStreamProcessor implements StreamProcessor
                 eventRegistry);
 
         this.actor = context.getActorControl();
+        this.streamProcessorContext = context;
         lifecycleListeners.forEach(e -> e.onOpen(this));
     }
 
@@ -241,5 +243,10 @@ public class TypedStreamProcessor implements StreamProcessor
     public ActorControl getActor()
     {
         return actor;
+    }
+
+    public StreamProcessorContext getStreamProcessorContext()
+    {
+        return streamProcessorContext;
     }
 }

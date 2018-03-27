@@ -17,75 +17,53 @@
  */
 package io.zeebe.broker.task.processor;
 
-import io.zeebe.broker.logstreams.processor.MetadataFilter;
-import io.zeebe.broker.logstreams.processor.NoopSnapshotSupport;
+import static io.zeebe.util.EnsureUtil.ensureGreaterThan;
+import static io.zeebe.util.EnsureUtil.ensureLessThanOrEqual;
+import static io.zeebe.util.EnsureUtil.ensureNotNull;
+import static io.zeebe.util.EnsureUtil.ensureNotNullOrEmpty;
+
+import org.agrona.DirectBuffer;
+
+import io.zeebe.broker.logstreams.processor.StreamProcessorLifecycleAware;
+import io.zeebe.broker.logstreams.processor.TypedEvent;
+import io.zeebe.broker.logstreams.processor.TypedEventProcessor;
+import io.zeebe.broker.logstreams.processor.TypedStreamEnvironment;
+import io.zeebe.broker.logstreams.processor.TypedStreamProcessor;
+import io.zeebe.broker.logstreams.processor.TypedStreamWriter;
 import io.zeebe.broker.task.CreditsRequest;
 import io.zeebe.broker.task.CreditsRequestBuffer;
 import io.zeebe.broker.task.TaskSubscriptionManager;
 import io.zeebe.broker.task.data.TaskEvent;
 import io.zeebe.broker.task.data.TaskState;
 import io.zeebe.broker.task.processor.TaskSubscriptions.SubscriptionIterator;
-import io.zeebe.logstreams.log.LogStream;
-import io.zeebe.logstreams.log.LogStreamWriter;
-import io.zeebe.logstreams.log.LoggedEvent;
-import io.zeebe.logstreams.processor.EventFilter;
-import io.zeebe.logstreams.processor.EventProcessor;
-import io.zeebe.logstreams.processor.StreamProcessor;
 import io.zeebe.logstreams.processor.StreamProcessorContext;
-import io.zeebe.logstreams.spi.SnapshotSupport;
-import io.zeebe.protocol.Protocol;
 import io.zeebe.protocol.clientapi.EventType;
-import io.zeebe.protocol.impl.BrokerEventMetadata;
 import io.zeebe.util.buffer.BufferUtil;
 import io.zeebe.util.sched.ActorControl;
 import io.zeebe.util.sched.clock.ActorClock;
 import io.zeebe.util.sched.future.ActorFuture;
 import io.zeebe.util.sched.future.CompletableActorFuture;
 
-import org.agrona.DirectBuffer;
-
-import static io.zeebe.protocol.clientapi.EventType.TASK_EVENT;
-import static io.zeebe.util.EnsureUtil.*;
-
-public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
+public class LockTaskStreamProcessor implements TypedEventProcessor<TaskEvent>, StreamProcessorLifecycleAware
 {
-    protected final BrokerEventMetadata targetEventMetadata = new BrokerEventMetadata();
+    protected final CreditsRequestBuffer creditsBuffer = new CreditsRequestBuffer(TaskSubscriptionManager.NUM_CONCURRENT_REQUESTS, this::increaseSubscriptionCredits);
 
-    protected final NoopSnapshotSupport noopSnapshotSupport = new NoopSnapshotSupport();
-    protected CreditsRequestBuffer creditsBuffer = new CreditsRequestBuffer(TaskSubscriptionManager.NUM_CONCURRENT_REQUESTS, this::increaseSubscriptionCredits);
+    private final TaskSubscriptions subscriptions = new TaskSubscriptions(8);
+    private final SubscriptionIterator taskDistributionIterator;
+    private final SubscriptionIterator managementIterator;
 
-    protected final TaskSubscriptions subscriptions = new TaskSubscriptions(8);
-    protected final SubscriptionIterator taskDistributionIterator;
-    protected final SubscriptionIterator managementIterator;
-
-    protected final DirectBuffer subscribedTaskType;
-
-    protected int logStreamPartitionId;
-
-    protected LogStream targetStream;
-
-    protected final TaskEvent taskEvent = new TaskEvent();
-    protected long eventKey = 0;
-
-    protected boolean hasLockedTask;
-    protected TaskSubscription lockSubscription;
-
-
+    private final DirectBuffer subscribedTaskType;
+    private int partitionId;
     private ActorControl actor;
     private StreamProcessorContext context;
+
+    private TaskSubscription selectedSubscriber;
 
     public LockTaskStreamProcessor(DirectBuffer taskType)
     {
         this.subscribedTaskType = taskType;
         this.taskDistributionIterator = subscriptions.iterator();
         this.managementIterator = subscriptions.iterator();
-    }
-
-    @Override
-    public SnapshotSupport getStateResource()
-    {
-        // need to restore the log position
-        return noopSnapshotSupport;
     }
 
     public DirectBuffer getSubscriptedTaskType()
@@ -95,22 +73,29 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
 
     public int getLogStreamPartitionId()
     {
-        return logStreamPartitionId;
+        return partitionId;
     }
 
     @Override
-    public void onOpen(StreamProcessorContext context)
+    public void onOpen(TypedStreamProcessor streamProcessor)
     {
-        creditsBuffer.handleRequests();
-        this.context = context;
-        final LogStream logStream = context.getLogStream();
-        logStreamPartitionId = logStream.getPartitionId();
-
-        targetStream = logStream;
-        actor = context.getActorControl();
+        this.context = streamProcessor.getStreamProcessorContext();
+        this.actor = context.getActorControl();
 
         // activate the processor while adding the first subscription
         context.suspendController();
+    }
+
+    public TypedStreamProcessor createStreamProcessor(TypedStreamEnvironment env)
+    {
+        this.partitionId = env.getStream().getPartitionId();
+
+        return env.newStreamProcessor()
+                .onEvent(EventType.TASK_EVENT, TaskState.CREATED, this)
+                .onEvent(EventType.TASK_EVENT, TaskState.LOCK_EXPIRED, this)
+                .onEvent(EventType.TASK_EVENT, TaskState.FAILED, this)
+                .onEvent(EventType.TASK_EVENT, TaskState.RETRIES_UPDATED, this)
+                .build();
     }
 
     public ActorFuture<Void> addSubscription(TaskSubscription subscription)
@@ -139,7 +124,6 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
         return actor.call(() ->
         {
             subscriptions.addSubscription(subscription);
-            System.out.println("Adding subscription with key " + subscription.getSubscriberKey());
 
             context.resumeController();
         });
@@ -149,7 +133,6 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
     {
         return actor.call(() ->
         {
-            System.out.println("Removing subscription with key " + subscriberKey);
             subscriptions.removeSubscription(subscriberKey);
             final boolean isSuspended = subscriptions.isEmpty();
             if (isSuspended)
@@ -234,105 +217,53 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
         return nextSubscription;
     }
 
-    public static MetadataFilter eventFilter()
-    {
-        return m -> m.getEventType() == EventType.TASK_EVENT;
-    }
-
-    public static final EventFilter reprocessingEventFilter(final DirectBuffer taskType)
-    {
-        final TaskEvent taskEvent = new TaskEvent();
-
-        return event ->
-        {
-            taskEvent.reset();
-            event.readValue(taskEvent);
-
-            return BufferUtil.equals(taskEvent.getType(), taskType);
-        };
-    }
-
     @Override
-    public EventProcessor onEvent(LoggedEvent event)
+    public void processEvent(TypedEvent<TaskEvent> event)
     {
-        eventKey = event.getKey();
+        selectedSubscriber = null;
 
-        taskEvent.reset();
-        event.readValue(taskEvent);
+        final TaskEvent taskEvent = event.getValue();
+        final boolean handlesTaskType = BufferUtil.equals(taskEvent.getType(), subscribedTaskType);
 
-        EventProcessor eventProcessor = null;
-
-        if (BufferUtil.equals(taskEvent.getType(), subscribedTaskType))
+        if (handlesTaskType && taskEvent.getRetries() > 0)
         {
-            switch (taskEvent.getState())
+            selectedSubscriber = getNextAvailableSubscription();
+            if (selectedSubscriber != null)
             {
-                case CREATED:
-                case LOCK_EXPIRED:
-                case FAILED:
-                case RETRIES_UPDATED:
-                    eventProcessor = this;
-                    break;
-
-                default:
-                    break;
-            }
-        }
-        return eventProcessor;
-    }
-
-    @Override
-    public void processEvent()
-    {
-        hasLockedTask = false;
-
-        if (taskEvent.getRetries() > 0)
-        {
-            lockSubscription = getNextAvailableSubscription();
-            if (lockSubscription != null)
-            {
-                final long lockTimeout = ActorClock.currentTimeMillis() + lockSubscription.getLockDuration();
-
-                System.out.println("Locking task for subscriber " + lockSubscription.getSubscriberKey());
+                final long lockTimeout = ActorClock.currentTimeMillis() + selectedSubscriber.getLockDuration();
 
                 taskEvent
                     .setState(TaskState.LOCK)
                     .setLockTime(lockTimeout)
-                    .setLockOwner(lockSubscription.getLockOwner());
-
-                hasLockedTask = true;
+                    .setLockOwner(selectedSubscriber.getLockOwner());
             }
         }
     }
 
     @Override
-    public long writeEvent(LogStreamWriter writer)
+    public long writeEvent(TypedEvent<TaskEvent> event, TypedStreamWriter writer)
     {
         long position = 0;
 
-        if (hasLockedTask)
+        if (selectedSubscriber != null)
         {
-            targetEventMetadata.reset();
-
-            targetEventMetadata
-                .requestStreamId(lockSubscription.getStreamId())
-                .subscriberKey(lockSubscription.getSubscriberKey())
-                .protocolVersion(Protocol.PROTOCOL_VERSION)
-                .eventType(TASK_EVENT);
-
-            position = writer.key(eventKey)
-                    .metadataWriter(targetEventMetadata)
-                    .valueWriter(taskEvent)
-                    .tryWrite();
+            // TODO: make garbage-free
+            position = writer.writeFollowupEvent(
+                event.getKey(),
+                event.getValue(),
+                m ->
+                    m.subscriberKey(selectedSubscriber.getSubscriberKey())
+                    .requestStreamId(selectedSubscriber.getStreamId()));
         }
         return position;
     }
 
     @Override
-    public void updateState()
+    public void updateState(TypedEvent<TaskEvent> event)
     {
-        if (hasLockedTask)
+        if (selectedSubscriber != null)
         {
-            subscriptions.addCredits(lockSubscription.getSubscriberKey(), -1);
+            subscriptions.addCredits(selectedSubscriber.getSubscriberKey(), -1);
 
             if (subscriptions.getTotalCredits() <= 0)
             {
@@ -340,5 +271,4 @@ public class LockTaskStreamProcessor implements StreamProcessor, EventProcessor
             }
         }
     }
-
 }
