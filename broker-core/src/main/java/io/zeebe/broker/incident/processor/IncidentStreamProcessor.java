@@ -50,9 +50,7 @@ public class IncidentStreamProcessor
     private final Long2LongZbMap activityInstanceMap = new Long2LongZbMap();
     private final Long2LongZbMap failedTaskMap = new Long2LongZbMap();
     private final IncidentMap incidentMap = new IncidentMap();
-
-    // TODO: this was not part of the snapshot so far; does that make sense?
-    private Long2LongZbMap resolvingEvents = new Long2LongZbMap();
+    private final Long2LongZbMap resolvingEvents = new Long2LongZbMap();
 
     public TypedStreamProcessor createStreamProcessor(TypedStreamEnvironment env)
     {
@@ -61,7 +59,8 @@ public class IncidentStreamProcessor
         TypedEventStreamProcessorBuilder builder = env.newStreamProcessor()
             .withStateResource(activityInstanceMap)
             .withStateResource(failedTaskMap)
-            .withStateResource(incidentMap.getMap());
+            .withStateResource(incidentMap.getMap())
+            .withStateResource(resolvingEvents);
 
 
         // incident events
